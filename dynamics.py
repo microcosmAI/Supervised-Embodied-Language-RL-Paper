@@ -4,11 +4,12 @@ import cv2
 import copy
 from sklearn.metrics import mean_squared_error
 from autoencoder import Autoencoder
+from ray.air import session
 
 class Image:
     def __init__(self, environment):
         self.environment = environment
-        self.observation_space = {"low": [0 for _ in range(30)], "high": [6000 for _ in range(30)]}
+        self.observation_space = {"low": [0 for _ in range(30)], "high": [20000 for _ in range(30)]}
         self.action_space = {"low": [], "high": []}
         self.autoencoder = Autoencoder(latent_dim=30, input_shape=(64, 64, 3))
         self.autoencoder.encoder.load_weights("models/encoder30.h5")
@@ -68,18 +69,29 @@ class Accuracy:
             if self.environment.collision("receiver_geom", target + "_geom"):
                 self.accuracies.append(1)
                 self.variances.append(variance[target])
+
+                if len(self.variances) > 50:
+                    report_variance = 1 - abs(sum(self.variances[-50:]) / 50)
+                    report_accuracy = sum(self.accuracies[-50:]) / 50
+                    print({"Variance": report_variance, "Accuracy": report_accuracy})
             elif self.environment.collision("receiver_geom", [choice for choice in choices if choice != target][0] + "_geom"):
                 self.accuracies.append(0)
                 self.variances.append(variance[[choice for choice in choices if choice != target][0]])
-            reference = [0, 0, 0, 0]
-            color = self.environment.data_store["target_color"]
-            reference[np.argmax(color)] = 1
-            self.currentSend = np.add(self.currentSend, self.environment.data_store[agent]["utterance_max"])
 
-            if self.environment.data_store[agent]["utterance_max"]  == reference:
-                self.sendAccuracies.append(1)
-            else:
-                self.sendAccuracies.append(0)
+                if len(self.variances) > 50:
+                    report_variance = 1 - abs(sum(self.variances[-50:]) / 50)
+                    report_accuracy = sum(self.accuracies[-50:]) / 50
+                    print({"Variance": report_variance, "Accuracy": report_accuracy})
+            if "utterance_max" in self.environment.data_store[agent].keys():
+                reference = [0, 0, 0, 0]
+                color = self.environment.data_store["target_color"]
+                reference[np.argmax(color)] = 1
+                self.currentSend = np.add(self.currentSend, self.environment.data_store[agent]["utterance_max"])
+
+                if self.environment.data_store[agent]["utterance_max"]  == reference:
+                    self.sendAccuracies.append(1)
+                else:
+                    self.sendAccuracies.append(0)
         return 0, []
     
 class Reward:
@@ -97,24 +109,38 @@ class Reward:
                     self.environment.data_store["target"] = choice
                     self.environment.data_store["target_color"] = self.environment.get_data(choice + "_geom")["color"]
                     self.environment.data_store["last_distance"] = copy.deepcopy(self.environment.distance("receiver_geom", choice + "_geom"))
+        reward = 0
         if agent == "receiver":
             target = self.environment.data_store["target"]
             new_distance = self.environment.distance("receiver_geom", target + "_geom")
             reward = self.environment.data_store["last_distance"] - new_distance
             self.environment.data_store["last_distance"] = copy.deepcopy(new_distance)
-        elif agent == "sender":
-            reference = [0, 0, 0, 0]
-            color = self.environment.data_store["target_color"]
-            reference[np.argmax(color)] = 1
-            reward = 0
-            if "utterance" in self.environment.data_store[agent].keys():
-                reward = -1 * mean_squared_error(reference, self.environment.data_store[agent]["utterance"])
+       # elif agent == "sender":
+            # reference = [0, 0, 0, 0]
+            # color = self.environment.data_store["target_color"]
+            # reference[np.argmax(color)] = 1
+            # reward = 0
+            # if "utterance" in self.environment.data_store[agent].keys():
+            #     reward = -1 * mean_squared_error(reference, self.environment.data_store[agent]["utterance"])
                 # if reference == self.environment.data_store[agent]["utterance_max"]:
                 #     reward = 0.01
                 # else:
                 #     reward = -0.01
         return reward, []
 
+def turn_done(mujoco_gym, agent):
+    _healthy_z_range = (0.35, 1.1)
+    if mujoco_gym.data.body(agent).xipos[2] < _healthy_z_range[0] or mujoco_gym.data.body(agent).xipos[2] > _healthy_z_range[1]:
+        return True
+    else:
+        return False
+    
+def turn_reward(mujoco_gym, agent):
+    _healthy_z_range = (0.35, 1.1)
+    if mujoco_gym.data.body(agent).xipos[2] < _healthy_z_range[0] or mujoco_gym.data.body(agent).xipos[2] > _healthy_z_range[1]:
+        return -0.5
+    else:
+        return 0
     
 def target_reward(mujoco_gym, agent):
     choices = ["choice_1", "choice_2"]

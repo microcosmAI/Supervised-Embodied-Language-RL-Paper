@@ -33,7 +33,7 @@ class TensorboardCallback(BaseCallback):
         return True
     
 
-xml_files = ["levels/" + file for file in os.listdir("levels/")]
+xml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")][0]
 window = 5
 learning_rate = 1e-6
 network = [256, 128]
@@ -48,18 +48,18 @@ config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collisio
 policy_kwargs = dict(
                 net_arch=dict(pi=network, vf=network),
 )
-env = MuJoCoRL(config_dict=config_dict)
-env = GymnasiumWrapper(env, "sender")
-env = NormalizeObservationV0(FrameStack(env, window))
-name = "PPO Sender"
-model = PPO("MlpPolicy", env, policy_kwargs=policy_kwargs, verbose=1, batch_size=batch_size, device=device, tensorboard_log="./results/", learning_rate=learning_rate, stats_window_size=200)
-model.learn(timesteps, tb_log_name=name, progress_bar=True, callback=TensorboardCallback())
-model.save("models/Sender" + str(int(time.time())))
+# env = MuJoCoRL(config_dict=config_dict)
+# env = GymnasiumWrapper(env, "sender")
+# env = NormalizeObservationV0(FrameStack(env, window))
+# name = "PPO Sender"
+# model = PPO("MlpPolicy", env, policy_kwargs=policy_kwargs, verbose=1, batch_size=batch_size, device=device, tensorboard_log="./results/", learning_rate=learning_rate, stats_window_size=200)
+# model.learn(timesteps, tb_log_name=name, progress_bar=True, callback=TensorboardCallback())
+# model.save("models/Sender" + str(int(time.time())))
 
 
 
 agents = ["receiver"]
-config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward], "doneFunctions":[target_done, border_done], "skipFrames":60, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":True, "renderMode":False, "maxSteps":512, "agentCameras":True}
+config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":5, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":True, "maxSteps":512, "agentCameras":True}
 policy_kwargs = dict(
                 net_arch=dict(pi=network, vf=network),
 )
