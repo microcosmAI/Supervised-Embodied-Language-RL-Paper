@@ -39,7 +39,7 @@ learning_rate = 1e-6
 network = [256, 128]
 batch_size = 32
 device = "cuda"
-timesteps = 250000
+timesteps = 4000000
 
 
 
@@ -66,6 +66,7 @@ policy_kwargs = dict(
 env = MuJoCoRL(config_dict=config_dict)
 env = GymnasiumWrapper(env, "receiver")
 env = NormalizeObservationV0(FrameStack(env, window))
+timesteps = 5
 name = "PPO Receiver"
 model = PPO("MlpPolicy", env, policy_kwargs=policy_kwargs, verbose=1, batch_size=batch_size, device=device, tensorboard_log="./results/", learning_rate=learning_rate, stats_window_size=200)
 model.learn(timesteps, tb_log_name=name, progress_bar=True, callback=TensorboardCallback())

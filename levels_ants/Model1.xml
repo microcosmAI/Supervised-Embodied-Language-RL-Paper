@@ -33,7 +33,7 @@
       <geom type="box" size="0.5 0.5 0.5" euler="0 0 0" rgba="0 0 255 1" name="reference_geom" />
     </body>
     <body name="sender" pos="-5.522553 0.9194446 1">
-      <camera name="sender_camera" pos="0 -0.6 0" euler="90 0 0"/>
+      <camera name="sender_camera" pos="0 -0.6 0" euler="90 180 0"/>
       <geom name="sender_geom" pos="0 0 0" size="0.25" type="sphere"/>
       <joint armature="0" damping="0" limited="false" margin="0.01" name="root" pos="0 0 0" type="free"/>
       <body name="front_left_leg" pos="0 0 0">
