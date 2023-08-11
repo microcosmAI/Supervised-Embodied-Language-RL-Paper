@@ -82,7 +82,7 @@
       </body>
     </body>
     <body name="receiver" pos="4.595446 1.222577 1">
-      <camera name="receiver_camera" pos="0 -0.6 0" euler="90 0 0"/>
+      <camera name="receiver_camera" pos="0 -0.6 0" euler="90 180 0"/>
       <geom name="receiver_geom" pos="0 0 0" size="0.25" type="sphere"/>
       <joint armature="0" damping="0" limited="false" margin="0.01" name="root_2" pos="0 0 0" type="free"/>
       <body name="front_left_leg_2" pos="0 0 0">
