@@ -153,22 +153,25 @@ def target_reward(mujoco_gym, agent):
     
     target = mujoco_gym.data_store["target"]
     reward = 0
-    if mujoco_gym.collision("receiver_geom", target + "_geom"):
-        return 1
-    elif mujoco_gym.collision("receiver_geom", [choice for choice in choices if choice != target][0] + "_geom"):
-        return -1
+    for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]:
+        if mujoco_gym.collision(ankle, target + "_geom"):
+            return 1
+        elif mujoco_gym.collision(ankle, [choice for choice in choices if choice != target][0] + "_geom"):
+            return -1
     return reward
 
 def collision_reward(mujoco_gym, agent):
     for border in ["border1_geom", "border2_geom", "border3_geom", "border4_geom", "border5_geom"]:
-        if mujoco_gym.collision(border, agent + "_geom"):
-            return -0.1
+        for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]:
+            if mujoco_gym.collision(border, ankle):
+                return -0.1
     return 0
         
 def target_done(mujoco_gym, agent):
     for choice in ["choice_1", "choice_2"]:
-        if(mujoco_gym.collision(choice + "_geom", agent + "_geom")):
-            return True
+        for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]:
+            if(mujoco_gym.collision(choice + "_geom", ankle)):
+                return True
     return False
 
 def border_done(mujoco_gym, agent):
