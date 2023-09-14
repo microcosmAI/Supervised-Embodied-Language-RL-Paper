@@ -115,17 +115,17 @@ class Reward:
             new_distance = self.environment.distance("receiver_geom", target + "_geom")
             reward = self.environment.data_store["last_distance"] - new_distance
             self.environment.data_store["last_distance"] = copy.deepcopy(new_distance)
-       # elif agent == "sender":
-            # reference = [0, 0, 0, 0]
-            # color = self.environment.data_store["target_color"]
-            # reference[np.argmax(color)] = 1
-            # reward = 0
-            # if "utterance" in self.environment.data_store[agent].keys():
-            #     reward = -1 * mean_squared_error(reference, self.environment.data_store[agent]["utterance"])
-                # if reference == self.environment.data_store[agent]["utterance_max"]:
-                #     reward = 0.01
-                # else:
-                #     reward = -0.01
+        elif agent == "sender":
+            reference = [0, 0, 0, 0]
+            color = self.environment.data_store["target_color"]
+            reference[np.argmax(color)] = 1
+            reward = 0
+            if "utterance" in self.environment.data_store[agent].keys():
+                reward = -1 * mean_squared_error(reference, self.environment.data_store[agent]["utterance"])
+                if reference == self.environment.data_store[agent]["utterance_max"]:
+                    reward = 0.01
+                else:
+                    reward = -0.01
         return reward, []
 
 def turn_done(mujoco_gym, agent):
