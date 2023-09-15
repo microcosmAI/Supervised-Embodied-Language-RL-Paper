@@ -20,9 +20,10 @@ from progressbar import progressbar
 
 def make_env(config_dict):
     def thunk():
-        window = 3
+        window = 5
         env = MuJoCoRL(config_dict=config_dict)
         env = GymWrapper(env, "receiver")
+        # env = gym.wrappers.FrameStack(env, window)
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
         env = gym.wrappers.NormalizeObservation(env)
@@ -46,16 +47,16 @@ class Agent(nn.Module):
         self.critic = nn.Sequential(
             layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 128)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, 128)),
+            layer_init(nn.Linear(128, 256)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, 1), std=1.0),
+            layer_init(nn.Linear(256, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
             layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 128)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, 128)),
+            layer_init(nn.Linear(128, 256)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, np.prod(envs.single_action_space.shape)), std=0.01),
+            layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
         )
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
@@ -196,7 +197,7 @@ if __name__ == "__main__":
 
     # Experiment settings
     exp_name = os.path.basename(__file__).rstrip(".py")
-    xml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")][0]
+    xml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
     agents = ["receiver"]
     config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":5, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":False, "maxSteps":1024, "agentCameras":True}
     learning_rate = 3e-5
@@ -265,24 +266,15 @@ if __name__ == "__main__":
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
 
-    # ALGO Logic: Storage setup
-    # obs = torch.zeros((num_steps, num_envs) + envs.single_observation_space.shape).to(device)
-    # actions = torch.zeros((num_steps, num_envs) + envs.single_action_space.shape).to(device)
-    # logprobs = torch.zeros((num_steps, num_envs)).to(device)
-    # rewards = torch.zeros((num_steps, num_envs)).to(device)
-    # dones = torch.zeros((num_steps, num_envs)).to(device)
-    # values = torch.zeros((num_steps, num_envs)).to(device)
-
     buffer = Buffer(num_steps, envs, num_envs, device)
 
-    # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
     next_obs = torch.Tensor(envs.reset()).to(device)
     next_done = torch.zeros(num_envs).to(device)
     num_updates = total_timesteps // batch_size
 
-    for update in progressbar(range(1, num_updates + 1), edirect_stdout=True):
+    for update in progressbar(range(1, num_updates + 1), redirect_stdout=True):
         # Annealing the rate if instructed to do so.
         if anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
