@@ -66,7 +66,7 @@ class Accuracy:
                 self.environment.data_store["sendVariances"] = True
                 self.currentSend = [0, 0, 0, 0]
             target = self.environment.data_store["target"]
-            if self.environment.collision("receiver_geom", target + "_geom"):
+            if any(self.environment.collision(ankle, target + "_geom") for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]):
                 self.accuracies.append(1)
                 self.variances.append(variance[target])
 
@@ -74,7 +74,7 @@ class Accuracy:
                     report_variance = 1 - abs(sum(self.variances[-50:]) / 50)
                     report_accuracy = sum(self.accuracies[-50:]) / 50
                     print({"Variance": report_variance, "Accuracy": report_accuracy})
-            elif self.environment.collision("receiver_geom", [choice for choice in choices if choice != target][0] + "_geom"):
+            elif any(self.environment.collision(ankle, [choice for choice in choices if choice != target][0] + "_geom") for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]):
                 self.accuracies.append(0)
                 self.variances.append(variance[[choice for choice in choices if choice != target][0]])
 

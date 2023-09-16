@@ -199,7 +199,6 @@ if __name__ == "__main__":
     exp_name = os.path.basename(__file__).rstrip(".py")
     xml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
     agents = ["receiver"]
-    config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":5, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":False, "maxSteps":1024, "agentCameras":True}
     learning_rate = 3e-5
     seed = 1
     total_timesteps = 5000000
@@ -248,14 +247,16 @@ if __name__ == "__main__":
         )
     writer = SummaryWriter(f"runs/{run_name}")
 
+    config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":5, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":False, "maxSteps":1024, "agentCameras":True, "tensorboard_writer":None}
+
     # TRY NOT TO MODIFY: seeding
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.backends.cudnn.deterministic = torch_deterministic
 
-    # device = torch.device("cuda" if torch.cuda.is_available() and cuda else "cpu")
-    device = torch.device("mps" if torch.backends.mps.is_available() and mps else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() and cuda else "cpu")
+    # device = torch.device("mps" if torch.backends.mps.is_available() and mps else "cpu")
 
     # env setup
     envs = gym.vector.AsyncVectorEnv(
