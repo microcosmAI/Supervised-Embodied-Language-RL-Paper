@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
+from wrappers.record_episode_statistics import RecordEpisodeStatistics
 from progressbar import progressbar
 
 
@@ -23,13 +24,15 @@ def make_env(config_dict):
         window = 5
         env = MuJoCoRL(config_dict=config_dict)
         env = GymWrapper(env, "receiver")
-        # env = gym.wrappers.FrameStack(env, window)
-        env = gym.wrappers.RecordEpisodeStatistics(env)
+        env = RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
         env = gym.wrappers.NormalizeObservation(env)
         env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         env = gym.wrappers.NormalizeReward(env)
         env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+        env.seed(1)
+        env.action_space.seed(1)
+        env.observation_space.seed(1)
         return env
 
     return thunk
@@ -45,16 +48,16 @@ class Agent(nn.Module):
     def __init__(self, envs):
         super(Agent, self).__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 128)),
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 512)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, 256)),
+            layer_init(nn.Linear(512, 256)),
             nn.Tanh(),
             layer_init(nn.Linear(256, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 128)),
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 512)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, 256)),
+            layer_init(nn.Linear(512, 256)),
             nn.Tanh(),
             layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
         )
@@ -189,6 +192,7 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
     writer.add_scalar("losses/explained_variance", explained_var, global_step)
     writer.add_scalar("charts/episodic_return", epoch_rewards / epoch_runs, global_step)
     writer.add_scalar("charts/episodic_length", epoch_lengths / epoch_runs, global_step)
+    writer.add_scalar("charts/accuracies", episode_accuracies / epoch_runs, global_step)
     print("SPS:", int(global_step / (time.time() - start_time)), "Average Reward:", epoch_rewards / epoch_runs)
     writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
@@ -199,9 +203,10 @@ if __name__ == "__main__":
     exp_name = os.path.basename(__file__).rstrip(".py")
     xml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
     agents = ["receiver"]
-    learning_rate = 3e-5
+    learning_rate = 1e-5
     seed = 1
-    total_timesteps = 5000000
+    total_timesteps = 10000000
+    # total_timesteps = 10000
     torch_deterministic = True
     cuda = True
     mps = False
@@ -211,9 +216,9 @@ if __name__ == "__main__":
     capture_video = False
 
     # Algorithm-specific arguments
-    num_envs = 5
+    num_envs = 7
     num_steps = 2048
-    anneal_lr = True
+    anneal_lr = False
     gae = True
     gamma = 0.99
     gae_lambda = 0.95
@@ -226,6 +231,7 @@ if __name__ == "__main__":
     vf_coef = 0.5
     max_grad_norm = 0.5
     target_kl = None
+    store_freq = 10
 
     # Calculate derived variables
     batch_size = int(num_envs * num_steps)
@@ -246,6 +252,12 @@ if __name__ == "__main__":
             save_code=True,
         )
     writer = SummaryWriter(f"runs/{run_name}")
+
+    writer.add_text("environment/level_number", str(len(xml_files)), 0)
+    writer.add_text("environment/agents", ', '.join(agents), 0)
+    writer.add_text("hyperparameters/learning_rate", str(learning_rate), 0)
+    writer.add_text("hyperparameters/network_size", ', '.join(str(e) for e in [512, 256]), 0)
+    writer.add_text("hyperparameters/batch", str(minibatch_size), 0)
 
     config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":5, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":False, "maxSteps":1024, "agentCameras":True, "tensorboard_writer":None}
 
@@ -274,6 +286,7 @@ if __name__ == "__main__":
     next_obs = torch.Tensor(envs.reset()).to(device)
     next_done = torch.zeros(num_envs).to(device)
     num_updates = total_timesteps // batch_size
+    train_start = time.time()
 
     for update in progressbar(range(1, num_updates + 1), redirect_stdout=True):
         # Annealing the rate if instructed to do so.
@@ -285,6 +298,7 @@ if __name__ == "__main__":
         epoch_rewards = 0
         epoch_lengths = 0
         epoch_runs = 0
+        episode_accuracies = 0
         for step in range(0, num_steps):
             global_step += 1 * num_envs
             buffer.obs[step] = next_obs
@@ -302,12 +316,15 @@ if __name__ == "__main__":
             buffer.rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
 
-            for item in info:
+            for i, item in enumerate(info):
                 if "episode" in item.keys():
                     epoch_rewards += item['episode']['r']
                     epoch_lengths += item["episode"]["l"]
+                    episode_accuracies += item["episode"]["a"]
                     epoch_runs += 1
                     break
+        if update % store_freq == 0:
+            torch.save(agent, "models/model" + str(start_time) + ".pth")
 
         update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma)
 

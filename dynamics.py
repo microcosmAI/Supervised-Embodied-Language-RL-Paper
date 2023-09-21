@@ -9,10 +9,10 @@ from ray.air import session
 class Image:
     def __init__(self, environment):
         self.environment = environment
-        self.observation_space = {"low": [0 for _ in range(30)], "high": [20000 for _ in range(30)]}
+        self.observation_space = {"low": [0 for _ in range(50)], "high": [1 for _ in range(50)]}
         self.action_space = {"low": [], "high": []}
-        self.autoencoder = Autoencoder(latent_dim=30, input_shape=(64, 64, 3))
-        self.autoencoder.encoder.load_weights("models/encoder30.h5")
+        self.autoencoder = Autoencoder(latent_dim=50, input_shape=(64, 64, 3))
+        self.autoencoder.encoder.load_weights("models/encoder50.h5")
         self.index = 0
 
     def dynamic(self, agent, actions):
@@ -20,7 +20,7 @@ class Image:
         image = self.environment.get_camera_data(agent + "_camera")
         image = cv2.resize(image, (64, 64))
         result = self.autoencoder.encoder.predict(np.array([image]), verbose=0)[0]
-        # cv2.imwrite("images/" + str(self.index) + ".png", image)
+        cv2.imwrite("/Users/cowolff/Documents/GitHub/s.mujoco_environment/ant-images/" + str(self.index) + ".png", image)
         return 0, result
     
 class Communication:
@@ -67,21 +67,21 @@ class Accuracy:
                 self.currentSend = [0, 0, 0, 0]
             target = self.environment.data_store["target"]
             if any(self.environment.collision(ankle, target + "_geom") for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]):
+            # if self.environment.collision("receiver_geom", target + "_geom"):
                 self.accuracies.append(1)
                 self.variances.append(variance[target])
 
                 if len(self.variances) > 50:
                     report_variance = 1 - abs(sum(self.variances[-50:]) / 50)
                     report_accuracy = sum(self.accuracies[-50:]) / 50
-                    print({"Variance": report_variance, "Accuracy": report_accuracy})
             elif any(self.environment.collision(ankle, [choice for choice in choices if choice != target][0] + "_geom") for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]):
+            # elif self.environment.collision("receiver_geom", [choice for choice in choices if choice != target][0] + "_geom"):
                 self.accuracies.append(0)
                 self.variances.append(variance[[choice for choice in choices if choice != target][0]])
 
                 if len(self.variances) > 50:
                     report_variance = 1 - abs(sum(self.variances[-50:]) / 50)
                     report_accuracy = sum(self.accuracies[-50:]) / 50
-                    print({"Variance": report_variance, "Accuracy": report_accuracy})
             if "utterance_max" in self.environment.data_store[agent].keys():
                 reference = [0, 0, 0, 0]
                 color = self.environment.data_store["target_color"]
@@ -154,6 +154,7 @@ def target_reward(mujoco_gym, agent):
     target = mujoco_gym.data_store["target"]
     reward = 0
     for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]:
+    # for ankle in ["receiver_geom"]:
         if mujoco_gym.collision(ankle, target + "_geom"):
             return 1
         elif mujoco_gym.collision(ankle, [choice for choice in choices if choice != target][0] + "_geom"):
@@ -163,6 +164,7 @@ def target_reward(mujoco_gym, agent):
 def collision_reward(mujoco_gym, agent):
     for border in ["border1_geom", "border2_geom", "border3_geom", "border4_geom", "border5_geom"]:
         for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]:
+        # for ankle in ["receiver_geom"]:
             if mujoco_gym.collision(border, ankle):
                 return -0.1
     return 0
@@ -170,6 +172,7 @@ def collision_reward(mujoco_gym, agent):
 def target_done(mujoco_gym, agent):
     for choice in ["choice_1", "choice_2"]:
         for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]:
+        # for ankle in ["receiver_geom"]:     
             if(mujoco_gym.collision(choice + "_geom", ankle)):
                 return True
     return False
