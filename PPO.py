@@ -222,7 +222,7 @@ if __name__ == "__main__":
     gae = True
     gamma = 0.99
     gae_lambda = 0.95
-    num_minibatches = 32
+    num_minibatches = 128
     update_epochs = 10
     norm_adv = True
     clip_coef = 0.2
@@ -277,6 +277,7 @@ if __name__ == "__main__":
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs).to(device)
+    agent = torch.load("models/model1695297484.092171.pth")
     optimizer = optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
 
     buffer = Buffer(num_steps, envs, num_envs, device)
