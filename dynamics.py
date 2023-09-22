@@ -20,7 +20,7 @@ class Image:
         image = self.environment.get_camera_data(agent + "_camera")
         image = cv2.resize(image, (64, 64))
         result = self.autoencoder.encoder.predict(np.array([image]), verbose=0)[0]
-        cv2.imwrite("/Users/cowolff/Documents/GitHub/s.mujoco_environment/ant-images/" + str(self.index) + ".png", image)
+        # cv2.imwrite("/Users/cowolff/Documents/GitHub/s.mujoco_environment/ant-images/" + str(self.index) + ".png", image)
         return 0, result
     
 class Communication:
