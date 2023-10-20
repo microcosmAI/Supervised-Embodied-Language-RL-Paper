@@ -38,9 +38,16 @@ class RecordEpisodeStatistics(gym.Wrapper):
                 infos[i] = infos[i].copy()
                 if len(self.env.environment.environment_dynamics[2].accuracies) > 0:
                     accuracies = self.env.environment.environment_dynamics[2].accuracies
-                    episode_accuracy = np.sum(accuracies) / len(accuracies)
+                    length = min(len(accuracies), 50)
+                    episode_accuracy = np.sum(accuracies[-1 * length:]) / length
                 else:
                     episode_accuracy = 0
+                if len(self.env.environment.environment_dynamics[2].sendAccuracies) > 0:
+                    sendAccuracies = self.env.environment.environment_dynamics[2].sendAccuracies
+                    length = min(len(sendAccuracies), 5000)
+                    episode_sendAccuracy = np.sum(sendAccuracies[-1 * length:]) / length
+                else:
+                    episode_sendAccuracy = 0
                 episode_return = self.episode_returns[i]
                 episode_length = self.episode_lengths[i]
                 episode_info = {
@@ -48,6 +55,7 @@ class RecordEpisodeStatistics(gym.Wrapper):
                     "l": episode_length,
                     "t": round(time.perf_counter() - self.t0, 6),
                     "a": episode_accuracy,
+                    "sa": episode_sendAccuracy
                 }
                 infos[i]["episode"] = episode_info
                 self.return_queue.append(episode_return)

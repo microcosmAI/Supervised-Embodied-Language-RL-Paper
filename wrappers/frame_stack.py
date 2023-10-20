@@ -4,10 +4,9 @@ from typing import Union
 
 import numpy as np
 
-import gym
-from gym.error import DependencyNotInstalled
-from gym.spaces import Box
-
+import gymnasium
+from gymnasium.error import DependencyNotInstalled
+from gymnasium.spaces import Box
 
 class LazyFrames:
     """Ensures common frames are only stored once to optimize memory use.
@@ -97,57 +96,29 @@ class LazyFrames:
         return frame
 
 
-class FrameStack(gym.ObservationWrapper):
-    """Observation wrapper that stacks the observations in a rolling manner.
+class FrameStack():
+    """Observation wrapper that stacks the observations in a rolling manner"""
 
-    For example, if the number of stacks is 4, then the returned observation contains
-    the most recent 4 observations. For environment 'Pendulum-v1', the original observation
-    is an array with shape [3], so if we stack 4 observations, the processed observation
-    has shape [4, 3].
-
-    Note:
-        - To be memory efficient, the stacked observations are wrapped by :class:`LazyFrame`.
-        - The observation space must be :class:`Box` type. If one uses :class:`Dict`
-          as observation space, it should apply :class:`FlattenObservation` wrapper first.
-          - After :meth:`reset` is called, the frame buffer will be filled with the initial observation. I.e. the observation returned by :meth:`reset` will consist of ``num_stack`-many identical frames,
-
-    Example:
-        >>> import gym
-        >>> env = gym.make('CarRacing-v1')
-        >>> env = FrameStack(env, 4)
-        >>> env.observation_space
-        Box(4, 96, 96, 3)
-        >>> obs = env.reset()
-        >>> obs.shape
-        (4, 96, 96, 3)
-    """
-
-    def __init__(
-        self,
-        env: gym.Env,
-        num_stack: int,
-        lz4_compress: bool = False,
-    ):
+    def __init__(self, env, num_stack):
         """Observation wrapper that stacks the observations in a rolling manner.
 
         Args:
-            env (Env): The environment to apply the wrapper
+            env (Parallel Environment): The environment to apply the wrapper
             num_stack (int): The number of frames to stack
             lz4_compress (bool): Use lz4 to compress the frames internally
         """
-        super().__init__(env)
+        self.env = env
+        self.agents = env.agents
         self.num_stack = num_stack
-        self.lz4_compress = lz4_compress
 
-        self.frames = deque(maxlen=num_stack)
+        self.frames = {agent: deque(maxlen=num_stack) for agent in env.agents}
 
-        low = np.repeat(self.observation_space.low[np.newaxis, ...], num_stack, axis=0)
+        low = np.repeat(self.env.observation_space.low[np.newaxis, ...], num_stack, axis=0)
         high = np.repeat(
-            self.observation_space.high[np.newaxis, ...], num_stack, axis=0
+            self.env.observation_space.high[np.newaxis, ...], num_stack, axis=0
         )
-        self.observation_space = Box(
-            low=low, high=high, dtype=self.observation_space.dtype
-        )
+        self.observation_space = Box(low=low, high=high, dtype=self.env.observation_space.dtype)
+        self.action_space = env.action_space
 
     def observation(self, observation):
         """Converts the wrappers current frames to lazy frames.
@@ -158,8 +129,8 @@ class FrameStack(gym.ObservationWrapper):
         Returns:
             :class:`LazyFrames` object for the wrapper's frame buffer,  :attr:`self.frames`
         """
-        assert len(self.frames) == self.num_stack, (len(self.frames), self.num_stack)
-        return LazyFrames(list(self.frames), self.lz4_compress)
+        assert len(self.frames[self.agents[0]]) == self.num_stack, (len(self.frames[self.agents[0]]), self.num_stack)
+        return {agent: LazyFrames(list(self.frames[agent])) for agent in self.env.agents}
 
     def step(self, action):
         """Steps through the environment, appending the observation to the frame buffer.
@@ -171,7 +142,8 @@ class FrameStack(gym.ObservationWrapper):
             Stacked observations, reward, terminated, truncated, and information from the environment
         """
         observation, reward, terminated, truncated, info = self.env.step(action)
-        self.frames.append(observation)
+        for agent in self.env.agents:
+            self.frames[agent].append(observation[agent])
         return self.observation(None), reward, terminated, truncated, info
 
     def reset(self, **kwargs):
@@ -185,6 +157,6 @@ class FrameStack(gym.ObservationWrapper):
         """
         obs, info = self.env.reset(**kwargs)
 
-        [self.frames.append(obs) for _ in range(self.num_stack)]
+        [[self.frames[agent].append(obs[agent]) for _ in range(self.num_stack)] for agent in self.env.agents]
 
         return self.observation(None), info

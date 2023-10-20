@@ -1,4 +1,21 @@
-class Wrapper(Env[ObsType, ActType]):
+import numpy as np
+from pettingzoo import ParallelEnv
+from gymnasium import spaces
+
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    SupportsFloat,
+    Tuple,
+    TypeVar,
+    Union,
+)
+
+class Wrapper():
     """Wraps an environment to allow a modular transformation of the :meth:`step` and :meth:`reset` methods.
 
     This class is the base class for all wrappers. The subclass could override
@@ -9,7 +26,7 @@ class Wrapper(Env[ObsType, ActType]):
         Don't forget to call ``super().__init__(env)`` if the subclass overrides :meth:`__init__`.
     """
 
-    def __init__(self, env: Env):
+    def __init__(self, env: ParallelEnv):
         """Wraps an environment to allow a modular transformation of the :meth:`step` and :meth:`reset` methods.
 
         Args:
@@ -29,9 +46,9 @@ class Wrapper(Env[ObsType, ActType]):
         return getattr(self.env, name)
 
     @property
-    def spec(self):
+    def metadata(self):
         """Returns the environment specification."""
-        return self.env.spec
+        return self.env.metadata
 
     @classmethod
     def class_name(cls):
@@ -39,7 +56,7 @@ class Wrapper(Env[ObsType, ActType]):
         return cls.__name__
 
     @property
-    def action_space(self) -> spaces.Space[ActType]:
+    def action_space(self):
         """Returns the action space of the environment."""
         if self._action_space is None:
             return self.env.action_space
@@ -102,11 +119,11 @@ class Wrapper(Env[ObsType, ActType]):
             "Can't access `_np_random` of a wrapper, use `.unwrapped._np_random` or `.np_random`."
         )
 
-    def step(self, action: ActType) -> Tuple[ObsType, float, bool, bool, dict]:
+    def step(self, action) -> Tuple[float, bool, bool, dict]:
         """Steps through the environment with action."""
         return self.env.step(action)
 
-    def reset(self, **kwargs) -> Tuple[ObsType, dict]:
+    def reset(self, **kwargs) -> Tuple[dict]:
         """Resets the environment with kwargs."""
         return self.env.reset(**kwargs)
 

@@ -1,6 +1,7 @@
 from MuJoCo_Gym.mujoco_rl import MuJoCoRL
 from MuJoCo_Gym.wrappers import GymnasiumWrapper, GymWrapper
 from gymnasium.wrappers.frame_stack import FrameStack
+from wrappers.frame_stack import FrameStack
 from gymnasium.experimental.wrappers import NormalizeObservationV0
 from dynamics import *
 import argparse
@@ -23,7 +24,9 @@ def make_env(config_dict):
     def thunk():
         window = 5
         env = MuJoCoRL(config_dict=config_dict)
-        env = GymWrapper(env, "receiver")
+        # env = GymWrapper(env, "receiver")
+        env = FrameStack(env, 4)
+        env = GymWrapper(env, "sender")
         env = RecordEpisodeStatistics(env)
         env = gym.wrappers.ClipAction(env)
         env = gym.wrappers.NormalizeObservation(env)
@@ -48,6 +51,7 @@ class Agent(nn.Module):
     def __init__(self, envs):
         super(Agent, self).__init__()
         self.critic = nn.Sequential(
+            nn.Flatten(),
             layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 512)),
             nn.Tanh(),
             layer_init(nn.Linear(512, 256)),
@@ -55,6 +59,7 @@ class Agent(nn.Module):
             layer_init(nn.Linear(256, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
+            nn.Flatten(),
             layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 512)),
             nn.Tanh(),
             layer_init(nn.Linear(512, 256)),
@@ -193,6 +198,7 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
     writer.add_scalar("charts/episodic_return", epoch_rewards / epoch_runs, global_step)
     writer.add_scalar("charts/episodic_length", epoch_lengths / epoch_runs, global_step)
     writer.add_scalar("charts/accuracies", episode_accuracies / epoch_runs, global_step)
+    writer.add_scalar("charts/send_accuracies", episode_sendAccuracies / epoch_runs, global_step)
     print("SPS:", int(global_step / (time.time() - start_time)), "Average Reward:", epoch_rewards / epoch_runs)
     writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
@@ -200,13 +206,17 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
 if __name__ == "__main__":
 
     # Experiment settings
-    exp_name = os.path.basename(__file__).rstrip(".py")
-    xml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
-    agents = ["receiver"]
+    # exp_name = os.path.basename(__file__).rstrip(".py")
+    exp_name = "Sender box"
+    xml_files = "levels_obstacles/Model1.xml"
+    # ml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
+    # xml_files = ["levels_obstacles/" + file for file in os.listdir("levels_obstacles/")]
+    agents = ["sender"]
+    # agents = ["sender"]
     learning_rate = 1e-5
     seed = 1
-    total_timesteps = 10000000
-    # total_timesteps = 10000
+    # total_timesteps = 20000000
+    total_timesteps = 16000000
     torch_deterministic = True
     cuda = True
     mps = False
@@ -217,7 +227,7 @@ if __name__ == "__main__":
 
     # Algorithm-specific arguments
     num_envs = 7
-    num_steps = 2048
+    num_steps = 4096
     anneal_lr = False
     gae = True
     gamma = 0.99
@@ -227,11 +237,11 @@ if __name__ == "__main__":
     norm_adv = True
     clip_coef = 0.2
     clip_vloss = True
-    ent_coef = 0.0
+    ent_coef = 0.5
     vf_coef = 0.5
     max_grad_norm = 0.5
     target_kl = None
-    store_freq = 10
+    store_freq = 20
 
     # Calculate derived variables
     batch_size = int(num_envs * num_steps)
@@ -259,7 +269,8 @@ if __name__ == "__main__":
     writer.add_text("hyperparameters/network_size", ', '.join(str(e) for e in [512, 256]), 0)
     writer.add_text("hyperparameters/batch", str(minibatch_size), 0)
 
-    config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":5, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":False, "maxSteps":1024, "agentCameras":True, "tensorboard_writer":None}
+    config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, calculate_exploration_reward], "doneFunctions":[target_done, border_done], "skipFrames":5, "environmentDynamics":[Image, Communication, Accuracy, Reward, RayDynamic], "freeJoint":True, "renderMode":True, "maxSteps":1024, "agentCameras":True, "tensorboard_writer":None}
+    # config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":1, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":True, "maxSteps":2000, "agentCameras":True, "tensorboard_writer":None}
 
     # TRY NOT TO MODIFY: seeding
     random.seed(seed)
@@ -272,12 +283,12 @@ if __name__ == "__main__":
 
     # env setup
     envs = gym.vector.AsyncVectorEnv(
-        [make_env(config_dict) for i in range(num_envs)]
+        [make_env(config_dict) for i in range(num_envs)], context="spawn"
     )
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     agent = Agent(envs).to(device)
-    agent = torch.load("models/model1695297484.092171.pth")
+    # agent = torch.load("models/model1695939146.0011158.pth")
     optimizer = optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
 
     buffer = Buffer(num_steps, envs, num_envs, device)
@@ -300,6 +311,7 @@ if __name__ == "__main__":
         epoch_lengths = 0
         epoch_runs = 0
         episode_accuracies = 0
+        episode_sendAccuracies = 0
         for step in range(0, num_steps):
             global_step += 1 * num_envs
             buffer.obs[step] = next_obs
@@ -322,6 +334,7 @@ if __name__ == "__main__":
                     epoch_rewards += item['episode']['r']
                     epoch_lengths += item["episode"]["l"]
                     episode_accuracies += item["episode"]["a"]
+                    episode_sendAccuracies += item["episode"]["sa"]
                     epoch_runs += 1
                     break
         if update % store_freq == 0:
