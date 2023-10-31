@@ -1,7 +1,6 @@
 from MuJoCo_Gym.mujoco_rl import MuJoCoRL
 from MuJoCo_Gym.wrappers import GymnasiumWrapper, GymWrapper
 from gymnasium.wrappers.frame_stack import FrameStack
-from wrappers.frame_stack import FrameStack
 from gymnasium.experimental.wrappers import NormalizeObservationV0
 from dynamics import *
 import argparse
@@ -16,7 +15,12 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
+
 from wrappers.record_episode_statistics import RecordEpisodeStatistics
+from wrappers.frame_stack import FrameStack
+from wrappers.normalizeObservation import NormalizeObservation
+from wrappers.normalizeRewards import NormalizeReward
+
 from progressbar import progressbar
 
 
@@ -26,13 +30,15 @@ def make_env(config_dict):
         env = MuJoCoRL(config_dict=config_dict)
         # env = GymWrapper(env, "receiver")
         env = FrameStack(env, 4)
+        env = NormalizeObservation(env)
+        env = NormalizeReward(env)
         env = GymWrapper(env, "sender")
-        env = RecordEpisodeStatistics(env)
-        env = gym.wrappers.ClipAction(env)
-        env = gym.wrappers.NormalizeObservation(env)
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        env = gym.wrappers.NormalizeReward(env)
-        env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+        # env = RecordEpisodeStatistics(env)
+        # env = gym.wrappers.ClipAction(env)
+        # env = gym.wrappers.NormalizeObservation(env)
+        # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+        # env = gym.wrappers.NormalizeReward(env)
+        # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
         env.seed(1)
         env.action_space.seed(1)
         env.observation_space.seed(1)
@@ -269,7 +275,16 @@ if __name__ == "__main__":
     writer.add_text("hyperparameters/network_size", ', '.join(str(e) for e in [512, 256]), 0)
     writer.add_text("hyperparameters/batch", str(minibatch_size), 0)
 
-    config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, calculate_exploration_reward], "doneFunctions":[target_done, border_done], "skipFrames":5, "environmentDynamics":[Image, Communication, Accuracy, Reward, RayDynamic], "freeJoint":True, "renderMode":True, "maxSteps":1024, "agentCameras":True, "tensorboard_writer":None}
+    config_dict = {"xmlPath":xml_files, 
+                   "agents":agents, 
+                   "rewardFunctions":[collision_reward, target_reward, calculate_exploration_reward], 
+                   "doneFunctions":[target_done, border_done], 
+                   "skipFrames":5,
+                   "environmentDynamics":[Image, Communication, Accuracy, Reward, RayDynamic],
+                   "freeJoint":True,
+                   "renderMode":True,
+                   "maxSteps":1024,
+                   "agentCameras":True}
     # config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":1, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":True, "maxSteps":2000, "agentCameras":True, "tensorboard_writer":None}
 
     # TRY NOT TO MODIFY: seeding
@@ -281,9 +296,13 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and cuda else "cpu")
     # device = torch.device("mps" if torch.backends.mps.is_available() and mps else "cpu")
 
+    # env = make_env(config_dict)()
+    # env.reset()
+    # env.step(env.action_space.sample())
+
     # env setup
-    envs = gym.vector.AsyncVectorEnv(
-        [make_env(config_dict) for i in range(num_envs)], context="spawn"
+    envs = gym.vector.SyncVectorEnv(
+        [make_env(config_dict) for i in range(num_envs)]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
@@ -333,8 +352,8 @@ if __name__ == "__main__":
                 if "episode" in item.keys():
                     epoch_rewards += item['episode']['r']
                     epoch_lengths += item["episode"]["l"]
-                    episode_accuracies += item["episode"]["a"]
-                    episode_sendAccuracies += item["episode"]["sa"]
+                    # episode_accuracies += item["episode"]["a"]
+                    # episode_sendAccuracies += item["episode"]["sa"]
                     epoch_runs += 1
                     break
         if update % store_freq == 0:
