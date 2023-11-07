@@ -27,7 +27,7 @@ from progressbar import progressbar
 def make_env(config_dict):
     def thunk():
         window = 5
-        env = MuJoCo_RL(config_dict=config_dict)
+        env = MuJoCo_RL(config_dict)
         # env = GymWrapper(env, "receiver")
         env = FrameStack(env, 4)
         env = NormalizeObservation(env)
