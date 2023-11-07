@@ -1,4 +1,4 @@
-from MuJoCo_Gym.mujoco_rl import MuJoCoRL
+from MuJoCo_Gym.mujoco_rl import MuJoCo_RL
 import numpy as np
 import cv2
 import copy

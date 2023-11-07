@@ -1,4 +1,4 @@
-from MuJoCo_Gym.mujoco_rl import MuJoCoRL
+from MuJoCo_Gym.mujoco_rl import MuJoCo_RL
 from MuJoCo_Gym.wrappers import GymnasiumWrapper, GymWrapper
 from gymnasium.wrappers.frame_stack import FrameStack
 from gymnasium.experimental.wrappers import NormalizeObservationV0
@@ -27,7 +27,7 @@ from progressbar import progressbar
 def make_env(config_dict):
     def thunk():
         window = 5
-        env = MuJoCoRL(config_dict=config_dict)
+        env = MuJoCo_RL(config_dict=config_dict)
         # env = GymWrapper(env, "receiver")
         env = FrameStack(env, 4)
         env = NormalizeObservation(env)
