@@ -19,7 +19,7 @@ class Image:
 
     def dynamic(self, agent, actions):
         self.index = self.index + 1
-        image = self.environment.get_camera_data(agent + "_camera")
+        image = self.environment.getCameraData(agent + "_camera")
         image = cv2.resize(image, (64, 64))
         result = self.autoencoder.encoder.predict(np.array([image]), verbose=0)[0]
         # cv2.imwrite("/Users/cowolff/Documents/GitHub/s.mujoco_environment/images_ants/" + str(self.index) + ".png", image)
@@ -136,7 +136,7 @@ class RayDynamic:
         self.environment = environment
         self.observation_space = {"low": [0, 0, 0, 0], "high": [255, 255, 255, 255]}
         self.action_space = {"low": [], "high": []}
-        self.senderId = np.array([self.environment.get_data("sender_geom")["id"]], np.int32)
+        self.senderId = np.array([self.environment.getData("sender_geom")["id"]], np.int32)
 
     def dynamic(self, agent, action):
         geomId = copy.deepcopy(self.senderId)
