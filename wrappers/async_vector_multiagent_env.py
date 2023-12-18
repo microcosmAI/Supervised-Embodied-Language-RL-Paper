@@ -35,24 +35,49 @@ class ParallelEnvWrapper:
     def env_worker(env_create_fn, action_queue, result_queue, done_event):
         env = env_create_fn()  # Create the environment in the worker process
         env.reset()
-        while not done_event.is_set():
-            actions = action_queue.get()
-            observations, rewards, terminations, truncations, infos = env.step(actions)
-            result_queue.put((observations, rewards, terminations, truncations, infos))
 
-            if all(terminations.values()) or all(truncations.values()):
-                done_event.set()
-        env.close()
+        while not done_event.is_set():
+            action_or_signal = action_queue.get()
+
+            if action_or_signal == "reset":
+                # Reset the environment and send initial observation
+                observation = env.reset()
+                result_queue.put(observation)
+            else:
+                # Process the action
+                observations, rewards, terminations, truncations, infos = env.step(
+                    action_or_signal
+                )
+                result_queue.put(
+                    (observations, rewards, terminations, truncations, infos)
+                )
+
+                if all(terminations.values()) or all(truncations.values()):
+                    done_event.set()
 
     def start(self):
         for process in self.processes:
             process.start()
 
+    def reset(self):
+        # Send a reset signal to each environment
+        for action_queue in self.action_queues:
+            action_queue.put("reset")
+
+        # Collect initial observations from each environment
+        initial_observations = []
+        for result_queue in self.result_queues:
+            initial_observations.append(result_queue.get())
+
+        return initial_observations
+
     def step(self, actions):
         for action_queue, action in zip(self.action_queues, actions):
             action_queue.put(action)
 
-        results = tuple(([], [], [], [], []))  # observations, rewards, terminations, truncations, infos
+        results = tuple(
+            ([], [], [], [], [])
+        )  # observations, rewards, terminations, truncations, infos
         # Shuffle results in corresponding lists
         for result_queue in self.result_queues:
             for result_list, result_item in zip(results, result_queue.get()):
@@ -78,6 +103,9 @@ if __name__ == "__main__":
     envs = ParallelEnvWrapper(env_create_fn, num_envs)
     envs.start()
 
+    # Reset environments and get initial observations
+    initial_observations = envs.reset()
+
     # Loop steps until all agents in all envs are terminated or truncated
     all_done = False
     while not all_done:
@@ -88,13 +116,17 @@ if __name__ == "__main__":
         ]
 
         # Perform a step in each environment with the new actions
-        observations, rewards, terminations, truncations, infos = envs.step(actions_list)
+        observations, rewards, terminations, truncations, infos = envs.step(
+            actions_list
+        )
 
         # Check if for all environments all agents are terminated or truncated
         all_done = all(
             all(
                 termination or truncation
-                for termination, truncation in zip(env_terminations.values(), env_truncations.values())
+                for termination, truncation in zip(
+                    env_terminations.values(), env_truncations.values()
+                )
             )
             for env_terminations, env_truncations in zip(terminations, truncations)
         )
