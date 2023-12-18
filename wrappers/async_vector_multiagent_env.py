@@ -25,24 +25,25 @@ class ParallelEnvWrapper:
                     env_create_fn,
                     self.action_queues[i],
                     self.result_queues[i],
-                    self.done_event,
                 ),
             )
             for i in range(num_envs)
         ]
 
     @staticmethod
-    def env_worker(env_create_fn, action_queue, result_queue, done_event):
+    def env_worker(env_create_fn, action_queue, result_queue):
         env = env_create_fn()  # Create the environment in the worker process
         env.reset()
 
-        while not done_event.is_set():
+        while True:
             action_or_signal = action_queue.get()
 
+            if action_or_signal == "quit":
+                break
             if action_or_signal == "reset":
                 # Reset the environment and send initial observation
-                observation = env.reset()
-                result_queue.put(observation)
+                observations = env.reset()
+                result_queue.put((observations, {}, {}, {}, {}))
             else:
                 # Process the action
                 observations, rewards, terminations, truncations, infos = env.step(
@@ -52,24 +53,12 @@ class ParallelEnvWrapper:
                     (observations, rewards, terminations, truncations, infos)
                 )
 
-                if all(terminations.values()) or all(truncations.values()):
-                    done_event.set()
+            if all(terminations.values()) or all(truncations.values()):
+                env.reset()
 
     def start(self):
         for process in self.processes:
             process.start()
-
-    def reset(self):
-        # Send a reset signal to each environment
-        for action_queue in self.action_queues:
-            action_queue.put("reset")
-
-        # Collect initial observations from each environment
-        initial_observations = []
-        for result_queue in self.result_queues:
-            initial_observations.append(result_queue.get())
-
-        return initial_observations
 
     def step(self, actions):
         for action_queue, action in zip(self.action_queues, actions):
@@ -84,7 +73,21 @@ class ParallelEnvWrapper:
                 result_list.append(result_item)
         return results
 
+    def reset(self):
+        # Send a reset signal to each environment
+        for action_queue in self.action_queues:
+            action_queue.put("reset")
+
+        # Collect initial observations from each environment
+        initial_observations = []
+        for result_queue in self.result_queues:
+            initial_observations.append(result_queue.get())
+
+        return initial_observations
+
     def close(self):
+        for action_queue in self.action_queues:
+            action_queue.put("quit")
         for process in self.processes:
             process.join()
 
@@ -100,36 +103,24 @@ def env_create_fn():
 # Test run envs until all done
 if __name__ == "__main__":
     num_envs = 2
+    num_episodes = 3
+    max_steps = 30
+
     envs = ParallelEnvWrapper(env_create_fn, num_envs)
     envs.start()
 
-    # Reset environments and get initial observations
-    initial_observations = envs.reset()
-
-    # Loop steps until all agents in all envs are terminated or truncated
-    all_done = False
-    while not all_done:
-        # Sample new actions for each environment
-        actions_list = [
-            {agent: envs.single_action_space.sample() for agent in envs.possible_agents}
-            for _ in range(envs.num_envs)
-        ]
-
-        # Perform a step in each environment with the new actions
-        observations, rewards, terminations, truncations, infos = envs.step(
-            actions_list
-        )
-
-        # Check if for all environments all agents are terminated or truncated
-        all_done = all(
-            all(
-                termination or truncation
-                for termination, truncation in zip(
-                    env_terminations.values(), env_truncations.values()
-                )
+    for episode in range(num_episodes):
+        for step in range(max_steps):
+            actions_list = [
+                {agent: envs.single_action_space.sample() for agent in envs.possible_agents}
+                for _ in range(envs.num_envs)
+            ]
+            # Perform a step in each environment with the new actions
+            observations, rewards, terminations, truncations, infos = envs.step(
+                actions_list
             )
-            for env_terminations, env_truncations in zip(terminations, truncations)
-        )
 
-    print("All envs are done")
+        initial_observations = envs.reset()
+        print("Reset")
+
     envs.close()
