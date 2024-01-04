@@ -138,7 +138,9 @@ if __name__ == "__main__":
 
     plt.plot(env_counts, results, marker='o')
     plt.xlabel('Number of Vectorized Environments')
+    plt.xticks(env_counts)
     plt.ylabel('Samples per Second')
+    plt.ylim(bottom=0)
     plt.title('Impact of Vectorization on Samples Generated per Second')
     plt.grid(True)
     plt.show()
