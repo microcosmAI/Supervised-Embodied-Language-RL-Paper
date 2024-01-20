@@ -29,19 +29,15 @@ def make_env(config_dict):
         window = 5
         env = MuJoCoRL(config_dict=config_dict)
         # env = GymWrapper(env, "receiver")
-        env = FrameStack(env, 4)
+        # env = FrameStack(env, 4)
         env = NormalizeObservation(env)
         env = NormalizeReward(env)
-        env = GymWrapper(env, "sender")
         # env = RecordEpisodeStatistics(env)
         # env = gym.wrappers.ClipAction(env)
         # env = gym.wrappers.NormalizeObservation(env)
         # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
         # env = gym.wrappers.NormalizeReward(env)
         # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        env.seed(1)
-        env.action_space.seed(1)
-        env.observation_space.seed(1)
         return env
 
     return thunk
@@ -58,7 +54,7 @@ class Agent(nn.Module):
         super(Agent, self).__init__()
         self.critic = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 512)),
+            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 512)),
             nn.Tanh(),
             layer_init(nn.Linear(512, 256)),
             nn.Tanh(),
@@ -66,13 +62,13 @@ class Agent(nn.Module):
         )
         self.actor_mean = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 512)),
+            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 512)),
             nn.Tanh(),
             layer_init(nn.Linear(512, 256)),
             nn.Tanh(),
-            layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
+            layer_init(nn.Linear(256, np.prod(envs.action_space.shape)), std=0.01),
         )
-        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
+        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.action_space.shape)))
 
     def get_value(self, x):
         return self.critic(x)
@@ -89,14 +85,14 @@ class Agent(nn.Module):
 class Buffer():
 
     def __init__(self, num_steps, envs, num_envs, device):
-        self.obs = torch.zeros((num_steps, num_envs) + envs.single_observation_space.shape).to(device)
-        self.actions = torch.zeros((num_steps, num_envs) + envs.single_action_space.shape).to(device)
+        self.obs = torch.zeros((num_steps, num_envs) + envs.observation_space.shape).to(device)
+        self.actions = torch.zeros((num_steps, num_envs) + envs.action_space.shape).to(device)
         self.logprobs = torch.zeros((num_steps, num_envs)).to(device)
         self.rewards = torch.zeros((num_steps, num_envs)).to(device)
         self.dones = torch.zeros((num_steps, num_envs)).to(device)
         self.values = torch.zeros((num_steps, num_envs)).to(device)
 
-def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma):
+def update_agent(agent, buffer, optimizer, next_obs, next_done, env, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma):
 
     with torch.no_grad():
         next_value = agent.get_value(next_obs).reshape(1, -1)
@@ -126,9 +122,9 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
             advantages = returns - buffer.values
 
     # flatten the batch
-    b_obs = buffer.obs.reshape((-1,) + envs.single_observation_space.shape)
+    b_obs = buffer.obs.reshape((-1,) + env.observation_space.shape)
     b_logprobs = buffer.logprobs.reshape(-1)
-    b_actions = buffer.actions.reshape((-1,) + envs.single_action_space.shape)
+    b_actions = buffer.actions.reshape((-1,) + env.action_space.shape)
     b_advantages = advantages.reshape(-1)
     b_returns = returns.reshape(-1)
     b_values = buffer.values.reshape(-1)
@@ -217,7 +213,7 @@ if __name__ == "__main__":
     xml_files = "levels_obstacles/Model1.xml"
     # ml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
     # xml_files = ["levels_obstacles/" + file for file in os.listdir("levels_obstacles/")]
-    agents = ["sender"]
+    agents = ["sender", "receiver"]
     # agents = ["sender"]
     learning_rate = 1e-5
     seed = 1
@@ -232,8 +228,8 @@ if __name__ == "__main__":
     capture_video = False
 
     # Algorithm-specific arguments
-    num_envs = 7
-    num_steps = 4096
+    num_envs = 1
+    num_steps = 1024
     anneal_lr = False
     gae = True
     gamma = 0.99
@@ -280,10 +276,10 @@ if __name__ == "__main__":
                    "rewardFunctions":[collision_reward, target_reward, calculate_exploration_reward], 
                    "doneFunctions":[target_done, border_done], 
                    "skipFrames":5,
-                   "environmentDynamics":[Image, Communication, Accuracy, Reward, RayDynamic],
+                   "environmentDynamics":[Image, Communication, Accuracy, Reward],
                    "freeJoint":True,
                    "renderMode":True,
-                   "maxSteps":1024,
+                   "maxSteps":512,
                    "agentCameras":True}
     # config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":1, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":True, "maxSteps":2000, "agentCameras":True, "tensorboard_writer":None}
 
@@ -301,68 +297,89 @@ if __name__ == "__main__":
     # env.step(env.action_space.sample())
 
     env = make_env(config_dict)()
-    env.reset()
+    obs, infos = env.reset()
 
-    # env setup
-    envs = gym.vector.SyncVectorEnv(
-        [make_env(config_dict) for i in range(num_envs)]
-    )
-    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
+    sender = Agent(env).to(device)
+    receiver = Agent(env).to(device)
 
-    agent = Agent(envs).to(device)
     # agent = torch.load("models/model1695939146.0011158.pth")
-    optimizer = optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
+    sender_optimizer = optim.Adam(sender.parameters(), lr=learning_rate, eps=1e-5)
+    receiver_optimizer = optim.Adam(receiver.parameters(), lr=learning_rate, eps=1e-5)
 
-    buffer = Buffer(num_steps, envs, num_envs, device)
+    buffer_sender = Buffer(num_steps, env, num_envs, device)
+    buffer_receiver = Buffer(num_steps, env, num_envs, device)
 
     global_step = 0
     start_time = time.time()
-    next_obs = torch.Tensor(envs.reset()).to(device)
-    next_done = torch.zeros(num_envs).to(device)
+    next_obs, infos = env.reset()
+
+
+    next_obs = {"sender": torch.Tensor(next_obs["sender"]).unsqueeze(0).to(device), "receiver": torch.Tensor(next_obs["receiver"]).unsqueeze(0).to(device)}
+
+    next_done = {"sender": torch.zeros(num_envs).to(device), "receiver": torch.zeros(num_envs).to(device)}
+
     num_updates = total_timesteps // batch_size
     train_start = time.time()
 
-    for update in progressbar(range(1, num_updates + 1), redirect_stdout=True):
+    # for update in progressbar(range(1, num_updates + 1), redirect_stdout=True):
+    for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
         if anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
             lrnow = frac * learning_rate
-            optimizer.param_groups[0]["lr"] = lrnow
+            sender_optimizer.param_groups[0]["lr"] = lrnow
+            receiver_optimizer.param_groups[0]["lr"] = lrnow
         
         epoch_rewards = 0
+        current_rewards = []
         epoch_lengths = 0
+        current_lengths = []
         epoch_runs = 0
         episode_accuracies = 0
         episode_sendAccuracies = 0
         for step in range(0, num_steps):
             global_step += 1 * num_envs
-            buffer.obs[step] = next_obs
-            buffer.dones[step] = next_done
+            buffer_sender.obs[step] = next_obs["sender"]
+            buffer_receiver.obs[step] = next_obs["receiver"]
 
-            # ALGO LOGIC: action logic
+            # ALGO LOGIC: sender action logic
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
-                buffer.values[step] = value.flatten()
-            buffer.actions[step] = action
-            buffer.logprobs[step] = logprob
+                sender_action, sender_logprob, _, sender_value = sender.get_action_and_value(next_obs["sender"])
+                buffer_sender.values[step] = sender_value.flatten()
+            buffer_sender.actions[step] = sender_action
+            buffer_sender.logprobs[step] = sender_logprob
+
+            # ALGO LOGIC: receiver action logic
+            with torch.no_grad():
+                receiver_action, receiver_logprob, _, receiver_value = receiver.get_action_and_value(next_obs["receiver"])
+                buffer_receiver.values[step] = receiver_value.flatten()
+            buffer_receiver.actions[step] = receiver_action
+            buffer_receiver.logprobs[step] = receiver_logprob
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, done, info = envs.step(action.cpu().numpy())
-            buffer.rewards[step] = torch.tensor(reward).to(device).view(-1)
-            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
+            next_obs, reward, terminations, truncations, info = env.step({"sender": sender_action.cpu().numpy()[0], "receiver": receiver_action.cpu().numpy()[0]})
+            current_rewards.append(reward["sender"])
+            next_obs = {"sender": torch.Tensor(next_obs["sender"]).unsqueeze(0).to(device), "receiver": torch.Tensor(next_obs["receiver"]).unsqueeze(0).to(device)}
 
-            for i, item in enumerate(info):
-                if "episode" in item.keys():
-                    epoch_rewards += item['episode']['r']
-                    epoch_lengths += item["episode"]["l"]
-                    # episode_accuracies += item["episode"]["a"]
-                    # episode_sendAccuracies += item["episode"]["sa"]
-                    epoch_runs += 1
-                    break
+            if terminations["sender"] or terminations["receiver"]:
+                next_obs, infos = env.reset()
+                next_obs = {"sender": torch.Tensor(next_obs["sender"]).unsqueeze(0).to(device), "receiver": torch.Tensor(next_obs["receiver"]).unsqueeze(0).to(device)}
+                epoch_rewards += sum(current_rewards)
+                epoch_runs += 1
+            if truncations["sender"] or truncations["receiver"]:
+                next_obs, infos = env.reset()
+                next_obs = {"sender": torch.Tensor(next_obs["sender"]).unsqueeze(0).to(device), "receiver": torch.Tensor(next_obs["receiver"]).unsqueeze(0).to(device)}
+                epoch_rewards += sum(current_rewards)
+                epoch_runs += 1
+            
+            buffer_sender.rewards[step] = torch.tensor(reward["sender"]).to(device).view(-1)
+            buffer_receiver.rewards[step] = torch.tensor(reward["receiver"]).to(device).view(-1)
+            next_done = {"sender": torch.Tensor([terminations["sender"]]).to(device), "receiver": torch.Tensor([terminations["receiver"]]).to(device)}
         if update % store_freq == 0:
-            torch.save(agent, "models/model" + str(start_time) + ".pth")
+            torch.save(sender, "models/model" + str(start_time) + ".pth")
+            torch.save(receiver, "models/model" + str(start_time) + ".pth")
 
-        update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma)
+        update_agent(sender, buffer_sender, sender_optimizer, next_obs["sender"], next_done["sender"], env, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma)
+        update_agent(receiver, buffer_receiver, receiver_optimizer, next_obs["receiver"], next_done["sender"], env, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma)
 
-    envs.close()
     writer.close()
