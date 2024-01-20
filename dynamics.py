@@ -23,7 +23,7 @@ class Image:
         image = cv2.resize(image, (64, 64))
         result = self.autoencoder.encoder.predict(np.array([image]), verbose=0)[0]
         # cv2.imwrite("/Users/cowolff/Documents/GitHub/s.mujoco_environment/images_ants/" + str(self.index) + ".png", image)
-        return 0, result
+        return 0, result, False, {}
     
 class Communication:
     def __init__(self, environment):
@@ -47,7 +47,7 @@ class Communication:
             observation = [0, 0, 0, 0]
         else:
             print("Dafaq is going on here?")
-        return 0, observation
+        return 0, observation, False, {}
     
 class Accuracy:
     def __init__(self, environment):
@@ -94,7 +94,7 @@ class Accuracy:
                     self.sendAccuracies.append(1)
                 else:
                     self.sendAccuracies.append(0)
-        return 0, []
+        return 0, [], False, {}
     
 class Reward:
     def __init__(self, environment):
@@ -129,7 +129,7 @@ class Reward:
                 #     reward = 0.5
                 # else:
                 #     reward = -0.5
-        return reward, []
+        return reward, [], False, {}
     
 class RayDynamic:
     def __init__(self, environment):
@@ -153,7 +153,7 @@ class RayDynamic:
             rgba = self.environment.model.geom(geomId).rgba
         else:
             rgba = [0, 0, 0, 0]
-        return 0, rgba
+        return 0, rgba, False, {}
 
 def turn_done(mujoco_gym, agent):
     _healthy_z_range = (0.35, 1.1)
