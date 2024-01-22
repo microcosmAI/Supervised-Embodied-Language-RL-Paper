@@ -25,26 +25,15 @@ from progressbar import progressbar
 
 
 def make_env(config_dict):
-    def thunk():
-        window = 5
-        env = MuJoCoRL(config_dict=config_dict)
-        # env = GymWrapper(env, "receiver")
-        env = FrameStack(env, 4)
-        env = NormalizeObservation(env)
-        env = NormalizeReward(env)
-        env = GymWrapper(env, "sender")
-        # env = RecordEpisodeStatistics(env)
-        # env = gym.wrappers.ClipAction(env)
-        # env = gym.wrappers.NormalizeObservation(env)
-        # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        # env = gym.wrappers.NormalizeReward(env)
-        # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        env.seed(1)
-        env.action_space.seed(1)
-        env.observation_space.seed(1)
-        return env
-
-    return thunk
+    window = 5
+    env = MuJoCoRL(config_dict=config_dict)
+    # env = GymWrapper(env, "receiver")
+    env = FrameStack(env, 4)
+    env = NormalizeObservation(env)
+    env = NormalizeReward(env)
+    env = GymWrapper(env, "sender")
+    env = RecordEpisodeStatistics(env)
+    return env
 
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
@@ -58,19 +47,19 @@ class Agent(nn.Module):
         super(Agent, self).__init__()
         self.critic = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 512)),
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 256)),
             nn.Tanh(),
-            layer_init(nn.Linear(512, 256)),
+            layer_init(nn.Linear(256, 128)),
             nn.Tanh(),
-            layer_init(nn.Linear(256, 1), std=1.0),
+            layer_init(nn.Linear(128, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 512)),
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 256)),
             nn.Tanh(),
-            layer_init(nn.Linear(512, 256)),
+            layer_init(nn.Linear(256, 128)),
             nn.Tanh(),
-            layer_init(nn.Linear(256, np.prod(envs.single_action_space.shape)), std=0.01),
+            layer_init(nn.Linear(128, np.prod(envs.single_action_space.shape)), std=0.01),
         )
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
@@ -192,6 +181,17 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
     var_y = np.var(y_true)
     explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
+    send_accuracies = []
+    for env in envs.envs:
+        env_dynamic = env.env.environment.env.env.env.environment_dynamics[3]
+        if isinstance(env_dynamic, Accuracy):
+            send_accuracies.append(env_dynamic.sendAccuracies)
+    send_accuracies = [item for sublist in send_accuracies for item in sublist]
+    if len(send_accuracies) > 0 and len(send_accuracies) > 16000:
+        episode_sendAccuracies = sum(send_accuracies[-16000:]) / 16000
+    else:
+        episode_sendAccuracies = 0
+
     # TRY NOT TO MODIFY: record rewards for plotting purposes
     writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
     writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
@@ -214,12 +214,12 @@ if __name__ == "__main__":
     # Experiment settings
     # exp_name = os.path.basename(__file__).rstrip(".py")
     exp_name = "Sender box"
-    xml_files = "levels_obstacles/Model1.xml"
-    # ml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
+    # xml_files = "levels_obstacles/Model1.xml"
+    xml_files = ["levels/" + file for file in os.listdir("levels/")]
     # xml_files = ["levels_obstacles/" + file for file in os.listdir("levels_obstacles/")]
     agents = ["sender"]
     # agents = ["sender"]
-    learning_rate = 1e-5
+    learning_rate = 1e-6
     seed = 1
     # total_timesteps = 20000000
     total_timesteps = 16000000
@@ -232,8 +232,8 @@ if __name__ == "__main__":
     capture_video = False
 
     # Algorithm-specific arguments
-    num_envs = 7
-    num_steps = 4096
+    num_envs = 4
+    num_steps = 2048
     anneal_lr = False
     gae = True
     gamma = 0.99
@@ -277,12 +277,12 @@ if __name__ == "__main__":
 
     config_dict = {"xmlPath":xml_files, 
                    "agents":agents, 
-                   "rewardFunctions":[collision_reward, target_reward, calculate_exploration_reward], 
+                   "rewardFunctions":[collision_reward, target_reward], 
                    "doneFunctions":[target_done, border_done], 
                    "skipFrames":5,
-                   "environmentDynamics":[Image, Communication, Accuracy, Reward, RayDynamic],
+                   "environmentDynamics":[Image, Reward, Communication, Accuracy],
                    "freeJoint":True,
-                   "renderMode":True,
+                   "renderMode":False,
                    "maxSteps":1024,
                    "agentCameras":True}
     # config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":1, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":True, "maxSteps":2000, "agentCameras":True, "tensorboard_writer":None}
@@ -296,16 +296,9 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and cuda else "cpu")
     # device = torch.device("mps" if torch.backends.mps.is_available() and mps else "cpu")
 
-    # env = make_env(config_dict)()
-    # env.reset()
-    # env.step(env.action_space.sample())
-
-    env = make_env(config_dict)()
-    env.reset()
-
     # env setup
     envs = gym.vector.SyncVectorEnv(
-        [make_env(config_dict) for i in range(num_envs)]
+        [lambda: make_env(config_dict) for i in range(num_envs)]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 

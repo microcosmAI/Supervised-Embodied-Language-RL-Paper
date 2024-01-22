@@ -197,30 +197,48 @@ def update_agent(agent, buffer, optimizer, next_obs, next_done, env, batch_size,
     writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
     writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
     writer.add_scalar("losses/explained_variance", explained_var, global_step)
-    writer.add_scalar("charts/episodic_return", epoch_rewards / epoch_runs, global_step)
+    writer.add_scalar("charts/sender/episodic_return", epoch_rewards["sender"] / epoch_runs, global_step)
+    writer.add_scalar("charts/receiver/episodic_return", epoch_rewards["receiver"] / epoch_runs, global_step)
     writer.add_scalar("charts/episodic_length", epoch_lengths / epoch_runs, global_step)
     writer.add_scalar("charts/accuracies", episode_accuracies / epoch_runs, global_step)
     writer.add_scalar("charts/send_accuracies", episode_sendAccuracies / epoch_runs, global_step)
-    print("SPS:", int(global_step / (time.time() - start_time)), "Average Reward:", epoch_rewards / epoch_runs)
+    print("SPS:", int(global_step / (time.time() - start_time)), "Average Reward:", epoch_rewards["sender"] / epoch_runs)
     writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
+def initialize_agent(env, device, learning_rate):
+    agent = Agent(env).to(device)
+    optimizer = optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
+    return agent, optimizer
+
+def get_action_and_update_buffer(agent, obs, buffer, step):
+    with torch.no_grad():
+        action, logprob, _, value = agent.get_action_and_value(obs)
+        buffer.values[step] = value.flatten()
+    buffer.actions[step] = action
+    buffer.logprobs[step] = logprob
+    return action
+
+def reset_environment(env, device):
+    next_obs, infos = env.reset()
+    next_obs = {k: torch.Tensor(v).unsqueeze(0).to(device) for k, v in next_obs.items()}
+    return next_obs, infos
 
 if __name__ == "__main__":
 
     # Experiment settings
     # exp_name = os.path.basename(__file__).rstrip(".py")
     exp_name = "Sender box"
-    xml_files = "levels_obstacles/Model1.xml"
-    # ml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
+    # xml_files = "levels/Model1.xml"
+    xml_files = ["levels/" + file for file in os.listdir("levels/")]
     # xml_files = ["levels_obstacles/" + file for file in os.listdir("levels_obstacles/")]
     agents = ["sender", "receiver"]
     # agents = ["sender"]
     learning_rate = 1e-5
     seed = 1
     # total_timesteps = 20000000
-    total_timesteps = 16000000
+    total_timesteps = 50000000
     torch_deterministic = True
-    cuda = True
+    cuda = False
     mps = False
     track = False
     wandb_project_name = "ppo-implementation-details"
@@ -229,7 +247,7 @@ if __name__ == "__main__":
 
     # Algorithm-specific arguments
     num_envs = 1
-    num_steps = 1024
+    num_steps = 2048
     anneal_lr = False
     gae = True
     gamma = 0.99
@@ -273,13 +291,13 @@ if __name__ == "__main__":
 
     config_dict = {"xmlPath":xml_files, 
                    "agents":agents, 
-                   "rewardFunctions":[collision_reward, target_reward, calculate_exploration_reward], 
+                   "rewardFunctions":[collision_reward, target_reward], 
                    "doneFunctions":[target_done, border_done], 
                    "skipFrames":5,
-                   "environmentDynamics":[Image, Communication, Accuracy, Reward],
+                   "environmentDynamics":[Image, Reward, Communication, Accuracy],
                    "freeJoint":True,
-                   "renderMode":True,
-                   "maxSteps":512,
+                   "renderMode":False,
+                   "maxSteps":1024,
                    "agentCameras":True}
     # config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":1, "environmentDynamics":[Image, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":True, "maxSteps":2000, "agentCameras":True, "tensorboard_writer":None}
 
@@ -299,30 +317,23 @@ if __name__ == "__main__":
     env = make_env(config_dict)()
     obs, infos = env.reset()
 
-    sender = Agent(env).to(device)
-    receiver = Agent(env).to(device)
-
-    # agent = torch.load("models/model1695939146.0011158.pth")
-    sender_optimizer = optim.Adam(sender.parameters(), lr=learning_rate, eps=1e-5)
-    receiver_optimizer = optim.Adam(receiver.parameters(), lr=learning_rate, eps=1e-5)
+    sender, sender_optimizer = initialize_agent(env, device, learning_rate)
+    receiver, receiver_optimizer = initialize_agent(env, device, learning_rate)
 
     buffer_sender = Buffer(num_steps, env, num_envs, device)
     buffer_receiver = Buffer(num_steps, env, num_envs, device)
 
     global_step = 0
     start_time = time.time()
-    next_obs, infos = env.reset()
-
-
-    next_obs = {"sender": torch.Tensor(next_obs["sender"]).unsqueeze(0).to(device), "receiver": torch.Tensor(next_obs["receiver"]).unsqueeze(0).to(device)}
+    next_obs, infos = reset_environment(env, device)
 
     next_done = {"sender": torch.zeros(num_envs).to(device), "receiver": torch.zeros(num_envs).to(device)}
 
     num_updates = total_timesteps // batch_size
     train_start = time.time()
 
-    # for update in progressbar(range(1, num_updates + 1), redirect_stdout=True):
-    for update in range(1, num_updates + 1):
+    for update in progressbar(range(1, num_updates + 1), redirect_stdout=True):
+    # for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
         if anneal_lr:
             frac = 1.0 - (update - 1.0) / num_updates
@@ -330,10 +341,9 @@ if __name__ == "__main__":
             sender_optimizer.param_groups[0]["lr"] = lrnow
             receiver_optimizer.param_groups[0]["lr"] = lrnow
         
-        epoch_rewards = 0
-        current_rewards = []
+        epoch_rewards = {"sender":0, "receiver":0}
+        current_rewards = {"sender":[], "receiver":[]}
         epoch_lengths = 0
-        current_lengths = []
         epoch_runs = 0
         episode_accuracies = 0
         episode_sendAccuracies = 0
@@ -342,34 +352,22 @@ if __name__ == "__main__":
             buffer_sender.obs[step] = next_obs["sender"]
             buffer_receiver.obs[step] = next_obs["receiver"]
 
-            # ALGO LOGIC: sender action logic
-            with torch.no_grad():
-                sender_action, sender_logprob, _, sender_value = sender.get_action_and_value(next_obs["sender"])
-                buffer_sender.values[step] = sender_value.flatten()
-            buffer_sender.actions[step] = sender_action
-            buffer_sender.logprobs[step] = sender_logprob
 
-            # ALGO LOGIC: receiver action logic
-            with torch.no_grad():
-                receiver_action, receiver_logprob, _, receiver_value = receiver.get_action_and_value(next_obs["receiver"])
-                buffer_receiver.values[step] = receiver_value.flatten()
-            buffer_receiver.actions[step] = receiver_action
-            buffer_receiver.logprobs[step] = receiver_logprob
+            sender_action = get_action_and_update_buffer(sender, next_obs["sender"], buffer_sender, step)
+            receiver_action = get_action_and_update_buffer(receiver, next_obs["receiver"], buffer_receiver, step)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, terminations, truncations, info = env.step({"sender": sender_action.cpu().numpy()[0], "receiver": receiver_action.cpu().numpy()[0]})
-            current_rewards.append(reward["sender"])
+            current_rewards["sender"].append(reward["sender"])
+            current_rewards["receiver"].append(reward["receiver"])
             next_obs = {"sender": torch.Tensor(next_obs["sender"]).unsqueeze(0).to(device), "receiver": torch.Tensor(next_obs["receiver"]).unsqueeze(0).to(device)}
 
-            if terminations["sender"] or terminations["receiver"]:
-                next_obs, infos = env.reset()
-                next_obs = {"sender": torch.Tensor(next_obs["sender"]).unsqueeze(0).to(device), "receiver": torch.Tensor(next_obs["receiver"]).unsqueeze(0).to(device)}
-                epoch_rewards += sum(current_rewards)
-                epoch_runs += 1
-            if truncations["sender"] or truncations["receiver"]:
-                next_obs, infos = env.reset()
-                next_obs = {"sender": torch.Tensor(next_obs["sender"]).unsqueeze(0).to(device), "receiver": torch.Tensor(next_obs["receiver"]).unsqueeze(0).to(device)}
-                epoch_rewards += sum(current_rewards)
+            if terminations["sender"] or terminations["receiver"] or truncations["sender"] or truncations["receiver"]:
+                next_obs, infos = reset_environment(env, device)
+                epoch_rewards["sender"] += sum(current_rewards["sender"])
+                epoch_rewards["receiver"] += sum(current_rewards["receiver"])
+
+                episode_sendAccuracies = sum(env.env.env.environment_dynamics[3].sendAccuracies[-512:]) / 512
                 epoch_runs += 1
             
             buffer_sender.rewards[step] = torch.tensor(reward["sender"]).to(device).view(-1)
