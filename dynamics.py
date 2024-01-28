@@ -39,6 +39,10 @@ class Communication:
             if "target_color" in self.environment.data_store.keys():
                 utterance[np.argmax(self.environment.data_store["target_color"])] = 1
             observation = utterance
+            # if "utterance_max" in self.environment.data_store["sender"].keys():
+            #     observation = self.environment.data_store["sender"]["utterance_max"]
+            # else:
+            #     observation = [0, 0, 0, 0]
             reward = 0
         elif agent == "sender":
             utterance = [0, 0, 0, 0]
@@ -47,13 +51,13 @@ class Communication:
             self.environment.data_store[agent]["utterance_max"] = utterance
             observation = [0, 0, 0, 0]
 
-            reference = [0, 0, 0, 0]
-            color = self.environment.data_store["target_color"]
-            reference[np.argmax(color)] = 1
-            reward = -1 * mean_squared_error(reference, actions)
+            # reference = [0, 0, 0, 0]
+            # color = self.environment.data_store["target_color"]
+            # reference[np.argmax(color)] = 1
+            # reward = -1 * mean_squared_error(reference, actions)
         else:
             print("Dafaq is going on here?")
-        return reward, observation, False, {}
+        return 0, observation, False, {}
     
 class Accuracy:
     def __init__(self, environment):
@@ -118,11 +122,10 @@ class Reward:
                     self.environment.data_store["target"] = choice
                     self.environment.data_store["target_color"] = self.environment.get_data(choice + "_geom")["color"]
                     self.environment.data_store["last_distance"] = copy.deepcopy(self.environment.distance("receiver_geom", choice + "_geom"))
-        reward = 0
         if agent == "receiver":
             target = self.environment.data_store["target"]
             new_distance = self.environment.distance("receiver_geom", target + "_geom")
-            reward = self.environment.data_store["last_distance"] - new_distance
+            reward = (self.environment.data_store["last_distance"] - new_distance) * 10
             self.environment.data_store["last_distance"] = copy.deepcopy(new_distance)
         elif agent == "sender":
             reference = [0, 0, 0, 0]
@@ -131,7 +134,6 @@ class Reward:
             reward = 0
             if "utterance" in self.environment.data_store[agent].keys():
                 reward = -1 * mean_squared_error(reference, self.environment.data_store[agent]["utterance"])
-                reward = 0
         return reward, [], False, {}
     
 class RayDynamic:
@@ -195,7 +197,7 @@ def target_reward(mujoco_gym, agent):
 def collision_reward(mujoco_gym, agent):
     for border in ["border1_geom", "border2_geom", "border3_geom", "border4_geom", "border5_geom"]:
         # for ankle in ["left_leg_geom_2", "left_ankle_geom_2", "right_leg_geom_2", "right_ankle_geom_2", "back_leg_geom_2", "third_ankle_geom_2", "rightback_leg_geom_2", "fourth_ankle_geom_2"]:
-        for ankle in [agent * "_geom"]:
+        for ankle in [agent + "_geom"]:
             if mujoco_gym.collision(border, ankle):
                 return -0.1
     return 0

@@ -54,19 +54,19 @@ class Agent(nn.Module):
         super(Agent, self).__init__()
         self.critic = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 512)),
+            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 128)),
             nn.Tanh(),
-            layer_init(nn.Linear(512, 256)),
+            layer_init(nn.Linear(128, 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(256, 1), std=1.0),
+            layer_init(nn.Linear(64, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 512)),
+            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 128)),
             nn.Tanh(),
-            layer_init(nn.Linear(512, 256)),
+            layer_init(nn.Linear(128, 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(256, np.prod(envs.action_space.shape)), std=0.01),
+            layer_init(nn.Linear(64, np.prod(envs.action_space.shape)), std=0.01),
         )
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.action_space.shape)))
 
@@ -188,23 +188,6 @@ def update_agent(agent, buffer, optimizer, next_obs, next_done, env, batch_size,
     var_y = np.var(y_true)
     explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-    # TRY NOT TO MODIFY: record rewards for plotting purposes
-    writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
-    writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-    writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
-    writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-    writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
-    writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
-    writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
-    writer.add_scalar("losses/explained_variance", explained_var, global_step)
-    writer.add_scalar("charts/sender/episodic_return", epoch_rewards["sender"] / epoch_runs, global_step)
-    writer.add_scalar("charts/receiver/episodic_return", epoch_rewards["receiver"] / epoch_runs, global_step)
-    writer.add_scalar("charts/episodic_length", epoch_lengths / epoch_runs, global_step)
-    writer.add_scalar("charts/accuracies", episode_accuracies / epoch_runs, global_step)
-    writer.add_scalar("charts/send_accuracies", episode_sendAccuracies / epoch_runs, global_step)
-    print("SPS:", int(global_step / (time.time() - start_time)), "Average Reward:", epoch_rewards["sender"] / epoch_runs)
-    writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
-
 def initialize_agent(env, device, learning_rate):
     agent = Agent(env).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=learning_rate, eps=1e-5)
@@ -236,7 +219,7 @@ if __name__ == "__main__":
     learning_rate = 1e-5
     seed = 1
     # total_timesteps = 20000000
-    total_timesteps = 50000000
+    total_timesteps = 2000000
     torch_deterministic = True
     cuda = False
     mps = False
@@ -248,7 +231,7 @@ if __name__ == "__main__":
     # Algorithm-specific arguments
     num_envs = 1
     num_steps = 2048
-    anneal_lr = False
+    anneal_lr = True
     gae = True
     gamma = 0.99
     gae_lambda = 0.95
@@ -257,7 +240,7 @@ if __name__ == "__main__":
     norm_adv = True
     clip_coef = 0.2
     clip_vloss = True
-    ent_coef = 0.5
+    ent_coef = 0.0
     vf_coef = 0.5
     max_grad_norm = 0.5
     target_kl = None
@@ -332,6 +315,9 @@ if __name__ == "__main__":
     num_updates = total_timesteps // batch_size
     train_start = time.time()
 
+    epoch_lengths = []
+    current_length = 0
+
     for update in progressbar(range(1, num_updates + 1), redirect_stdout=True):
     # for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
@@ -343,12 +329,13 @@ if __name__ == "__main__":
         
         epoch_rewards = {"sender":0, "receiver":0}
         current_rewards = {"sender":[], "receiver":[]}
-        epoch_lengths = 0
+        variances = {"sender":[], "receiver":[]}
         epoch_runs = 0
         episode_accuracies = 0
         episode_sendAccuracies = 0
         for step in range(0, num_steps):
             global_step += 1 * num_envs
+            current_length += 1
             buffer_sender.obs[step] = next_obs["sender"]
             buffer_receiver.obs[step] = next_obs["receiver"]
 
@@ -367,7 +354,36 @@ if __name__ == "__main__":
                 epoch_rewards["sender"] += sum(current_rewards["sender"])
                 epoch_rewards["receiver"] += sum(current_rewards["receiver"])
 
-                episode_sendAccuracies = sum(env.env.env.environment_dynamics[3].sendAccuracies[-512:]) / 512
+                epoch_lengths.append(current_length)
+                current_length = 0
+
+                dynamic = env.env.env.environment_dynamics[3]
+
+                if len(dynamic.sendAccuracies) > 512:
+                    episode_sendAccuracies = sum(dynamic.sendAccuracies[-512:]) / 512
+                    del dynamic.sendAccuracies[:-513]
+                    writer.add_scalar("charts/sender/accuracies", episode_sendAccuracies, global_step)
+
+                if len(dynamic.accuracies) > 4:
+                    window = min(15, len(dynamic.accuracies))
+                    episode_accuracies = sum(dynamic.accuracies[-1 * window:]) / window
+                    writer.add_scalar("charts/receiver/accuracies", episode_accuracies, global_step)
+                    if window == 15:
+                        del dynamic.accuracies[:-16]
+
+                if len(dynamic.variances) > 4:
+                    window = min(15, len(dynamic.variances))
+                    current_variance = sum(dynamic.variances[-1 * window:]) / window
+                    writer.add_scalar("charts/receiver_variance", current_variance, global_step)
+                    if window == 15:
+                        del dynamic.variances[:-16]
+
+                if len(epoch_lengths) > 3:
+                    window = min(10, len(epoch_lengths))
+                    epoch_length = sum(epoch_lengths[-1 * window:]) / window
+                    writer.add_scalar("charts/episodic_length", epoch_length, global_step)
+                    if window == 10:
+                        del epoch_lengths[:-11]
                 epoch_runs += 1
             
             buffer_sender.rewards[step] = torch.tensor(reward["sender"]).to(device).view(-1)
@@ -378,6 +394,13 @@ if __name__ == "__main__":
             torch.save(receiver, "models/model" + str(start_time) + ".pth")
 
         update_agent(sender, buffer_sender, sender_optimizer, next_obs["sender"], next_done["sender"], env, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma)
-        update_agent(receiver, buffer_receiver, receiver_optimizer, next_obs["receiver"], next_done["sender"], env, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma)
+        update_agent(receiver, buffer_receiver, receiver_optimizer, next_obs["receiver"], next_done["receiver"], env, batch_size, update_epochs, minibatch_size, clip_coef, vf_coef, ent_coef, max_grad_norm, target_kl, clip_vloss, norm_adv, gae_lambda, gae, gamma)
+
+        # TRY NOT TO MODIFY: record rewards for plotting purposes
+        writer.add_scalar("charts/learning_rate", sender_optimizer.param_groups[0]["lr"], global_step)
+        writer.add_scalar("charts/sender/episodic_return", epoch_rewards["sender"] / epoch_runs, global_step)
+        writer.add_scalar("charts/receiver/episodic_return", epoch_rewards["receiver"] / epoch_runs, global_step)
+        print("SPS:", int(global_step / (time.time() - start_time)), "Average Reward:", epoch_rewards["sender"] / epoch_runs)
+        writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
     writer.close()

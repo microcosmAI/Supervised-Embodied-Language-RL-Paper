@@ -5,12 +5,14 @@ from MuJoCo_Gym.wrappers import GymnasiumWrapper
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 import os
-from gymnasium.wrappers.frame_stack import FrameStack
-from gymnasium.experimental.wrappers import NormalizeObservationV0
+# from gymnasium.wrappers.frame_stack import FrameStack
+# from gymnasium.experimental.wrappers import NormalizeObservationV0
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvStepReturn, VecEnvWrapper
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv 
 from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
-
+from wrappers.normalizeRewards import NormalizeReward
+from wrappers.normalizeObservation import NormalizeObservation
+from wrappers.frame_stack import FrameStack
 class TensorboardCallback(BaseCallback):
     """
     Custom callback for plotting additional values in tensorboard.
@@ -20,10 +22,10 @@ class TensorboardCallback(BaseCallback):
     def _on_step(self) -> bool:
         # Log scalar value (here a random variable)
         for env in self.training_env.envs:
-            if isinstance(env.env.env.environment.environment_dynamics[3], Accuracy):
-                accuacies = env.env.env.environment.environment_dynamics[3].accuracies
-                variances = env.env.env.environment.environment_dynamics[3].variances
-                sendAccuracies = env.env.env.environment.environment_dynamics[3].sendAccuracies
+            if isinstance(env.environment.env.env.env.environment_dynamics[3], Accuracy):
+                accuacies = env.environment.env.env.env.environment_dynamics[3].accuracies
+                variances = env.environment.env.env.env.environment_dynamics[3].variances
+                sendAccuracies = env.environment.env.env.env.environment_dynamics[3].sendAccuracies
                 if len(accuacies) > 50:
                     value = sum(accuacies[-50:]) / 50
                     self.logger.record("accuracy", value)
@@ -70,8 +72,10 @@ policy_kwargs = dict(
 
 def createEnv():
     env = MuJoCoRL(config_dict=config_dict)
+    env = NormalizeReward(env)
+    env = NormalizeObservation(env)
+    env = FrameStack(env, window)
     env = GymnasiumWrapper(env, "sender")
-    env = NormalizeObservationV0(FrameStack(env, window))
     return env
 
 envs = [lambda: createEnv() for i in range(6)]

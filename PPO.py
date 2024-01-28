@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
+from distributions import StateDependentNoiseDistribution
 
 from wrappers.record_episode_statistics import RecordEpisodeStatistics
 from wrappers.frame_stack import FrameStack
@@ -28,7 +29,7 @@ def make_env(config_dict):
     window = 5
     env = MuJoCoRL(config_dict=config_dict)
     # env = GymWrapper(env, "receiver")
-    env = FrameStack(env, 4)
+    # env = FrameStack(env, 4)
     env = NormalizeObservation(env)
     env = NormalizeReward(env)
     env = GymWrapper(env, "sender")
@@ -47,19 +48,19 @@ class Agent(nn.Module):
         super(Agent, self).__init__()
         self.critic = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 256)),
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(256, 128)),
+            layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, 1), std=1.0),
+            layer_init(nn.Linear(64, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 256)),
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(256, 128)),
+            layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, np.prod(envs.single_action_space.shape)), std=0.01),
+            layer_init(nn.Linear(64, np.prod(envs.single_action_space.shape)), std=0.01),
         )
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
 
@@ -133,6 +134,7 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
 
             _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
             logratio = newlogprob - b_logprobs[mb_inds]
+            # logratio = b_logprobs[mb_inds] - newlogprob
             ratio = logratio.exp()
 
             with torch.no_grad():
@@ -166,6 +168,7 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
                 v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
             entropy_loss = entropy.mean()
+            # loss = pg_loss - ent_coef * entropy_loss + v_loss * vf_coef
             loss = pg_loss - ent_coef * entropy_loss + v_loss * vf_coef
 
             optimizer.zero_grad()
@@ -183,7 +186,7 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
 
     send_accuracies = []
     for env in envs.envs:
-        env_dynamic = env.env.environment.env.env.env.environment_dynamics[3]
+        env_dynamic = env.env.environment.env.env.environment_dynamics[3]
         if isinstance(env_dynamic, Accuracy):
             send_accuracies.append(env_dynamic.sendAccuracies)
     send_accuracies = [item for sublist in send_accuracies for item in sublist]
@@ -204,7 +207,7 @@ def update_agent(agent, buffer, optimizer, batch_size, update_epochs, minibatch_
     writer.add_scalar("charts/episodic_return", epoch_rewards / epoch_runs, global_step)
     writer.add_scalar("charts/episodic_length", epoch_lengths / epoch_runs, global_step)
     writer.add_scalar("charts/accuracies", episode_accuracies / epoch_runs, global_step)
-    writer.add_scalar("charts/send_accuracies", episode_sendAccuracies / epoch_runs, global_step)
+    writer.add_scalar("charts/send_accuracies", episode_sendAccuracies, global_step)
     print("SPS:", int(global_step / (time.time() - start_time)), "Average Reward:", epoch_rewards / epoch_runs)
     writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
@@ -219,10 +222,10 @@ if __name__ == "__main__":
     # xml_files = ["levels_obstacles/" + file for file in os.listdir("levels_obstacles/")]
     agents = ["sender"]
     # agents = ["sender"]
-    learning_rate = 1e-6
+    learning_rate = 3e-4
     seed = 1
     # total_timesteps = 20000000
-    total_timesteps = 16000000
+    total_timesteps = 2000000
     torch_deterministic = True
     cuda = True
     mps = False
@@ -232,18 +235,18 @@ if __name__ == "__main__":
     capture_video = False
 
     # Algorithm-specific arguments
-    num_envs = 4
+    num_envs = 1
     num_steps = 2048
-    anneal_lr = False
+    anneal_lr = True
     gae = True
     gamma = 0.99
     gae_lambda = 0.95
-    num_minibatches = 128
+    num_minibatches = 32
     update_epochs = 10
     norm_adv = True
     clip_coef = 0.2
     clip_vloss = True
-    ent_coef = 0.5
+    ent_coef = 0.0
     vf_coef = 0.5
     max_grad_norm = 0.5
     target_kl = None
