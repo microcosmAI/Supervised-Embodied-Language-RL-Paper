@@ -1,3 +1,6 @@
+import time
+import numpy as np
+import matplotlib.pyplot as plt
 from multiprocessing import Process, Queue, Event
 from pettingzoo.butterfly import pistonball_v6
 
@@ -95,19 +98,16 @@ class ParallelEnvWrapper:
 # Create a function that returns a new environment instance
 def env_create_fn():
     return pistonball_v6.parallel_env(
-        render_mode="human",
-        max_cycles=50,
+        render_mode=None,
+        max_cycles=100,
     )
 
-
-# Test run envs until all done
-if __name__ == "__main__":
-    num_envs = 2
-    num_episodes = 3
-    max_steps = 30
-
+# Function to benchmark a given number of environments
+def benchmark(num_envs, num_episodes, max_steps):
     envs = ParallelEnvWrapper(env_create_fn, num_envs)
     envs.start()
+
+    start_time = time.time()
 
     for episode in range(num_episodes):
         for step in range(max_steps):
@@ -115,12 +115,32 @@ if __name__ == "__main__":
                 {agent: envs.single_action_space.sample() for agent in envs.possible_agents}
                 for _ in range(envs.num_envs)
             ]
-            # Perform a step in each environment with the new actions
-            observations, rewards, terminations, truncations, infos = envs.step(
-                actions_list
-            )
+            envs.step(actions_list)
+            time.sleep(0.01)  # Simulating the time taken for action sampling
 
-        initial_observations = envs.reset()
-        print("Reset")
+        envs.reset()
 
+    total_time = time.time() - start_time
     envs.close()
+
+    samples_generated = num_envs * num_episodes * max_steps
+    samples_per_second = samples_generated / total_time
+    return samples_per_second
+
+if __name__ == "__main__":
+    # Parameters for the benchmark
+    num_episodes = 10
+    max_steps = 50
+    env_counts = [1, 2, 3, 4]  # Different number of environments to test
+
+    # Collecting benchmark data
+    results = [benchmark(env_count, num_episodes, max_steps) for env_count in env_counts]
+
+    plt.plot(env_counts, results, marker='o')
+    plt.xlabel('Number of Vectorized Environments')
+    plt.xticks(env_counts)
+    plt.ylabel('Samples per Second')
+    plt.ylim(bottom=0)
+    plt.title('Impact of Vectorization on Samples Generated per Second')
+    plt.grid(True)
+    plt.show()
