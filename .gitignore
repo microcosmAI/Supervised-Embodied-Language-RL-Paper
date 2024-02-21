@@ -164,3 +164,4 @@ cython_debug/
 *.0
 *.TXT
 runs/
+data/
