@@ -29,7 +29,7 @@ def make_env(config_dict):
         window = 5
         env = MuJoCoRL(config_dict=config_dict)
         # env = GymWrapper(env, "receiver")
-        # env = FrameStack(env, 4)
+        env = FrameStack(env, 4)
         env = NormalizeObservation(env)
         env = NormalizeReward(env)
         # env = RecordEpisodeStatistics(env)
@@ -54,17 +54,17 @@ class Agent(nn.Module):
         super(Agent, self).__init__()
         self.critic = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 128)),
+            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 256)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, 64)),
+            layer_init(nn.Linear(256, 64)),
             nn.Tanh(),
             layer_init(nn.Linear(64, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
             nn.Flatten(),
-            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 128)),
+            layer_init(nn.Linear(np.array(envs.observation_space.shape).prod(), 256)),
             nn.Tanh(),
-            layer_init(nn.Linear(128, 64)),
+            layer_init(nn.Linear(256, 64)),
             nn.Tanh(),
             layer_init(nn.Linear(64, np.prod(envs.action_space.shape)), std=0.01),
         )
@@ -210,13 +210,13 @@ if __name__ == "__main__":
 
     # Experiment settings
     # exp_name = os.path.basename(__file__).rstrip(".py")
-    exp_name = "Sender box"
+    exp_name = "Sender Ant"
     # xml_files = "levels/Model1.xml"
-    xml_files = ["levels/" + file for file in os.listdir("levels/")]
+    xml_files = ["levels_ants/" + file for file in os.listdir("levels_ants/")]
     # xml_files = ["levels_obstacles/" + file for file in os.listdir("levels_obstacles/")]
     agents = ["sender", "receiver"]
     # agents = ["sender"]
-    learning_rate = 1e-5
+    learning_rate = 3e-4
     seed = 1
     # total_timesteps = 20000000
     total_timesteps = 2000000
@@ -274,11 +274,11 @@ if __name__ == "__main__":
 
     config_dict = {"xmlPath":xml_files, 
                    "agents":agents, 
-                   "rewardFunctions":[collision_reward, target_reward], 
-                   "doneFunctions":[target_done, border_done], 
+                   "rewardFunctions":[collision_reward, target_reward, turn_reward], 
+                   "doneFunctions":[target_done, border_done, turn_done], 
                    "skipFrames":5,
                    "environmentDynamics":[Image, Reward, Communication, Accuracy],
-                   "freeJoint":True,
+                   "freeJoint":False,
                    "renderMode":False,
                    "maxSteps":1024,
                    "agentCameras":True}
@@ -357,7 +357,7 @@ if __name__ == "__main__":
                 epoch_lengths.append(current_length)
                 current_length = 0
 
-                dynamic = env.env.env.environment_dynamics[3]
+                dynamic = env.env.env.env.environment_dynamics[3]
 
                 if len(dynamic.sendAccuracies) > 512:
                     episode_sendAccuracies = sum(dynamic.sendAccuracies[-512:]) / 512
