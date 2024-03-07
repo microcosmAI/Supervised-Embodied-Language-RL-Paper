@@ -191,12 +191,14 @@ if __name__ == "__main__":
 
     input_shape = (64, 64, 3)
     latent_dim = 30
-    batch_size = 16
+    batch_size = 64
     epochs = 100
 
+    experiment_name = '3colors'
+
     repo_root = Path.cwd()
-    dataset_dir = repo_root / "data" / "autoencoder_dataset"
-    model_path = repo_root / "models" / f"3colors_{latent_dim}.tf"
+    dataset_dir = repo_root / "data" / experiment_name
+    model_path = repo_root / "models" / f"{experiment_name}_{latent_dim}.tf"
 
     if model_path.exists():
         print("Loading autoencoder model...")
