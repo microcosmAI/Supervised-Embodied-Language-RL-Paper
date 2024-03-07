@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Model, load_model
@@ -42,7 +43,7 @@ class Autoencoder(Model):
                     activation="relu",
                 ),
                 Flatten(),
-                Dense(latent_dim, activation="relu"),
+                Dense(latent_dim, activation="sigmoid"),
             ]
         )
         self.decoder = tf.keras.Sequential(
@@ -87,17 +88,16 @@ def load_data(data_dir, image_size=(64, 64)):
     return np.array(images)
 
 
-def load_and_prepare_image(image_path, image_size=(64, 64)):
+def preprocess_image(image, image_size=(64, 64)):
     """Load and prepare a single image."""
-    image = cv2.imread(image_path)
     image = cv2.resize(image, image_size)
     image = image / 255.0
     return image
 
 
-def get_a_single_image_embedding(autoencoder, image_path):
+def get_a_single_image_embedding(autoencoder, image):
     """Load and encode a single image."""
-    image = load_and_prepare_image(image_path)
+    image = preprocess_image(image)
     encoded_image = autoencoder.encode(image[None, ...]).numpy()[0]
     return encoded_image
 
@@ -118,9 +118,9 @@ def display_samples(samples, n_cols=5):
 
 
 def plot_original_and_reconstructed(
-    autoencoder, image_path, save_path="reconstructed_image.png"
+    autoencoder, image, save_path="reconstructed_image.png"
 ):
-    test_image = load_and_prepare_image(image_path)
+    test_image = preprocess_image(image)
     test_image_processed = test_image[None, ...]
 
     reconstructed_image = autoencoder.predict(test_image_processed)[0]
@@ -196,7 +196,7 @@ if __name__ == "__main__":
 
     repo_root = Path.cwd()
     dataset_dir = repo_root / "data" / "autoencoder_dataset"
-    model_path = repo_root / "models" / f"autoencoder{latent_dim}.keras"
+    model_path = repo_root / "models" / f"3colors_{latent_dim}.tf"
 
     if model_path.exists():
         print("Loading autoencoder model...")
@@ -214,6 +214,7 @@ if __name__ == "__main__":
 
     # Test the model with a sample image
     test_image_path = dataset_dir / "300.png"
-    plot_original_and_reconstructed(autoencoder, str(test_image_path))
-    embedding = get_a_single_image_embedding(autoencoder, str(test_image_path))
+    image = cv2.imread(str(test_image_path))
+    plot_original_and_reconstructed(autoencoder, image)
+    embedding = get_a_single_image_embedding(autoencoder, image)
     print('Embedding:', embedding)
