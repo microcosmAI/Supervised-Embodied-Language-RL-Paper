@@ -43,7 +43,7 @@ class Autoencoder(Model):
                     activation="relu",
                 ),
                 Flatten(),
-                Dense(latent_dim, activation="sigmoid"),
+                Dense(latent_dim, activation="relu"),
             ]
         )
         self.decoder = tf.keras.Sequential(
@@ -82,6 +82,7 @@ def load_data(data_dir, image_size=(64, 64)):
     for image_name in image_names:
         if image_name.lower().endswith((".jpg", ".png", ".jpeg")):
             image = cv2.imread(os.path.join(data_dir, image_name))
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = cv2.resize(image, image_size[:2])
             image = image / 255.0
             images.append(image)
@@ -190,11 +191,11 @@ def train_model(
 if __name__ == "__main__":
 
     input_shape = (64, 64, 3)
-    latent_dim = 30
+    latent_dim = 50
     batch_size = 64
     epochs = 100
 
-    experiment_name = '3colors'
+    experiment_name = '3colors_2shapes'
 
     repo_root = Path.cwd()
     dataset_dir = repo_root / "data" / experiment_name
@@ -215,8 +216,9 @@ if __name__ == "__main__":
         )
 
     # Test the model with a sample image
-    test_image_path = dataset_dir / "300.png"
+    test_image_path = dataset_dir / "receiver_8569.png"
     image = cv2.imread(str(test_image_path))
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     plot_original_and_reconstructed(autoencoder, image)
     embedding = get_a_single_image_embedding(autoencoder, image)
     print('Embedding:', embedding)
