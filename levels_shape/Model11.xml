@@ -20,10 +20,10 @@
       <geom type="box" size="0.25 5 0.5" euler="0 0 0" rgba="0 .9 0 1" name="border5_geom" />
     </body>
     <body pos="7.02852 -2.071592 0.4710507" name="choice_1">
-      <geom type="box" size="1 1 0.5" euler="0 0 0" rgba="0 0 255 1" name="choice_1_geom" />
+      <geom type="box" size="0.5 0.5 0.5" euler="0 0 0" rgba="0 0 255 1" name="choice_1_geom" />
     </body>
     <body pos="1.373154 -2.135309 0.3841939" name="choice_2">
-      <geom type="box" size="1 1 0.5" euler="0 0 0" rgba="255 0 0 1" name="choice_2_geom" />
+      <geom type="box" size="0.5 0.5 0.5" euler="0 0 0" rgba="255 0 0 1" name="choice_2_geom" />
     </body>
     <body pos="-5.522553 -2.403258 0.4737153" name="reference">
       <geom type="box" size="0.5 0.5 0.5" euler="0 0 0" rgba="0 0 255 1" name="reference_geom" />
