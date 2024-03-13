@@ -12,9 +12,11 @@ from tensorflow.keras.layers import (
     Flatten,
     Dense,
     Reshape,
+    BatchNormalization,
+    Activation
 )
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
 import cv2
 import matplotlib.pyplot as plt
@@ -28,35 +30,39 @@ class Autoencoder(Model):
         self.encoder = tf.keras.Sequential(
             [
                 Input(shape=input_shape),
-                Conv2D(
-                    32,
-                    kernel_size=3,
-                    strides=2,
-                    padding="same",
-                    activation="relu",
-                ),
-                Conv2D(
-                    64,
-                    kernel_size=3,
-                    strides=2,
-                    padding="same",
-                    activation="relu",
-                ),
+                Conv2D(32, (3, 3), 2, padding="same"),
+                BatchNormalization(),
+                Activation('relu'),
+                Conv2D(64, (3, 3), 2, padding="same"),
+                BatchNormalization(),
+                Activation('relu'),
+                Conv2D(128, (3, 3), 2, padding="same"),
+                BatchNormalization(),
+                Activation('relu'),
                 Flatten(),
-                Dense(latent_dim, activation="relu"),
+                Dense(latent_dim),
+                BatchNormalization(),
+                Activation("sigmoid"),
             ]
         )
+
         self.decoder = tf.keras.Sequential(
             [
-                Dense(16 * 16 * 256, activation="relu"),
-                Reshape((16, 16, 256)),
-                Conv2DTranspose(
-                    64, kernel_size=3, strides=2, padding="same", activation="relu"
-                ),
-                Conv2DTranspose(
-                    32, kernel_size=3, strides=2, padding="same", activation="relu"
-                ),
-                Conv2DTranspose(3, kernel_size=3, activation="sigmoid", padding="same"),
+                Dense(8 * 8 * 128),
+                BatchNormalization(),
+                Activation('relu'),
+                Reshape((8, 8, 128)),
+                Conv2DTranspose(128, (3, 3), 2, padding="same"),
+                BatchNormalization(),
+                Activation('relu'),
+                Conv2DTranspose(64, (3, 3), 2, padding="same"),
+                BatchNormalization(),
+                Activation('relu'),
+                Conv2DTranspose(32, (3, 3), 2, padding="same"),
+                BatchNormalization(),
+                Activation('relu'),
+                Conv2DTranspose(3, (3, 3), 1, padding="same"),
+                Activation("sigmoid")
             ]
         )
 
@@ -71,10 +77,6 @@ class Autoencoder(Model):
     def decode(self, z):
         return self.decoder(z)
 
-    def sample(self, n_samples):
-        z = tf.random.normal(shape=(n_samples, self.latent_dim))
-        return self.decode(z).numpy()
-
 
 def load_data(data_dir, image_size=(64, 64)):
     images = []
@@ -83,16 +85,14 @@ def load_data(data_dir, image_size=(64, 64)):
         if image_name.lower().endswith((".jpg", ".png", ".jpeg")):
             image = cv2.imread(os.path.join(data_dir, image_name))
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = cv2.resize(image, image_size[:2])
-            image = image / 255.0
+            image = preprocess_image(image, image_size=image_size[:2])
             images.append(image)
     return np.array(images)
 
 
 def preprocess_image(image, image_size=(64, 64)):
-    """Load and prepare a single image."""
     image = cv2.resize(image, image_size)
-    image = image / 255.0
+    image = image.astype("uint8") / 255.0
     return image
 
 
@@ -107,21 +107,11 @@ def dssim_loss(y_true, y_pred):
     return 1 - tf.reduce_mean(tf.image.ssim(y_true, y_pred, 1.0)) / 2
 
 
-def display_samples(samples, n_cols=5):
-    n_rows = (len(samples) + n_cols - 1) // n_cols
-    plt.figure(figsize=(n_cols * 2, n_rows * 2))
-    for i, image in enumerate(samples):
-        plt.subplot(n_rows, n_cols, i + 1)
-        plt.imshow(image)
-        plt.axis("off")
-    plt.tight_layout()
-    plt.savefig("generated_samples.png")
-
-
 def plot_original_and_reconstructed(
     autoencoder, image, save_path="reconstructed_image.png"
 ):
     test_image = preprocess_image(image)
+    
     test_image_processed = test_image[None, ...]
 
     reconstructed_image = autoencoder.predict(test_image_processed)[0]
@@ -151,10 +141,10 @@ def load_autoencoder_model(model_path):
 
 def train_model(
     data_dir,
-    input_shape=(64, 64, 3),
-    latent_dim=50,
-    batch_size=8,
-    epochs=20,
+    input_shape,
+    latent_dim,
+    batch_size,
+    epochs=200,
     model_path=None,
 ):
     # Load and prepare data
@@ -174,6 +164,16 @@ def train_model(
             monitor="val_loss",
         ),
         EarlyStopping(monitor="val_loss", patience=5, verbose=1),
+        ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.1,
+            patience=2,
+            verbose=1,
+            mode='auto',
+            min_delta=0.0001,
+            cooldown=0,
+            min_lr=0
+        ),
     ]
 
     # Train the model
@@ -181,6 +181,7 @@ def train_model(
         x=X_train,
         y=X_train,
         epochs=epochs,
+        shuffle=True,
         batch_size=batch_size,
         validation_data=(X_val, X_val),
         callbacks=callbacks,
@@ -192,8 +193,7 @@ if __name__ == "__main__":
 
     input_shape = (64, 64, 3)
     latent_dim = 50
-    batch_size = 64
-    epochs = 100
+    batch_size = 256
 
     experiment_name = '3colors_2shapes'
 
@@ -211,14 +211,20 @@ if __name__ == "__main__":
             input_shape=input_shape,
             latent_dim=latent_dim,
             batch_size=batch_size,
-            epochs=epochs,
             model_path=model_path,
         )
 
     # Test the model with a sample image
-    test_image_path = dataset_dir / "receiver_8569.png"
-    image = cv2.imread(str(test_image_path))
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    plot_original_and_reconstructed(autoencoder, image)
-    embedding = get_a_single_image_embedding(autoencoder, image)
-    print('Embedding:', embedding)
+    for image_path in [
+        "receiver_8567.png",
+        "receiver_8607.png",
+        "receiver_193.png",
+        "receiver_1635.png",
+        "receiver_2019.png",
+    ]:
+        test_image_path = dataset_dir / image_path 
+        image = cv2.imread(str(test_image_path))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        plot_original_and_reconstructed(autoencoder, image)
+        embedding = get_a_single_image_embedding(autoencoder, image)
+        print('Embedding:', embedding)
