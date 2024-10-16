@@ -1,0 +1,16 @@
+distributions==2.2.1
+gym==0.26.2
+gymnasium==0.29.1
+lz4==4.3.3
+matplotlib==3.8.3
+mujoco==3.1.2
+numpy==2.1.2
+opencv_python==4.9.0.80
+pettingzoo==1.24.3
+progressbar33==2.4
+ray==2.9.3
+scikit_learn==1.4.1.post1
+stable_baselines3==2.3.2
+tensorflow==2.17.0
+torch==2.2.0
+wandb==0.18.3
