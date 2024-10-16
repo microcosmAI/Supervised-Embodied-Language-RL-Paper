@@ -53,22 +53,6 @@ config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collisio
 policy_kwargs = dict(
                 net_arch=dict(pi=network, vf=network),
 )
-# env = MuJoCoRL(config_dict=config_dict)
-# env = GymnasiumWrapper(env, "sender")
-# env = NormalizeObservationV0(FrameStack(env, window))
-# name = "PPO Sender"
-# model = PPO("MlpPolicy", env, policy_kwargs=policy_kwargs, verbose=1, batch_size=batch_size, device=device, tensorboard_log="./results/", learning_rate=learning_rate, stats_window_size=200)
-# model.learn(timesteps, tb_log_name=name, progress_bar=True, callback=TensorboardCallback())
-# model.save("models/Sender" + str(int(time.time())))
-
-
-
-# agents = ["receiver"]
-# config_dict = {"xmlPath":xml_files, "agents":agents, "rewardFunctions":[collision_reward, target_reward, turn_reward], "doneFunctions":[target_done, border_done, turn_done], "skipFrames":5, "environmentDynamics":[Image, Reward, Communication, Accuracy, Reward], "freeJoint":False, "renderMode":False, "maxSteps":1024, "agentCameras":True}
-# policy_kwargs = dict(
-#                 net_arch=dict(pi=network, vf=network),
-# )
-# envs = []
 
 def createEnv():
     env = MuJoCoRL(config_dict=config_dict)
@@ -84,4 +68,3 @@ timesteps = 3000000
 name = "PPO Sender"
 model = PPO("MlpPolicy", envs, policy_kwargs=policy_kwargs, verbose=1, batch_size=batch_size, device=device, tensorboard_log="./results/", learning_rate=learning_rate, stats_window_size=200)
 model.learn(timesteps, tb_log_name=name, progress_bar=True, callback=TensorboardCallback())
-# model.save("models/Receiver" + str(int(time.time())))
